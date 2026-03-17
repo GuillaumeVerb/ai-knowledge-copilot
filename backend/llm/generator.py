@@ -46,6 +46,9 @@ class StubLLMProvider(LLMProvider):
         if prompt.startswith("Summarize the document"):
             blocks = self._parse_summary_blocks(prompt)
             return self._summarize_blocks(blocks)
+        if prompt.startswith("Compare the two documents"):
+            question, blocks = self._parse_compare_prompt(prompt)
+            return self._compare_blocks(blocks, question)
         if "Context:" not in prompt:
             return "I do not know based on the available documents."
 
@@ -75,6 +78,17 @@ class StubLLMProvider(LLMProvider):
             for _, document, text in matches
         ]
 
+    def _parse_compare_prompt(self, prompt: str) -> tuple[str, list[dict[str, str]]]:
+        question_match = re.search(r"Question:\s*(.*?)\nLeft document:", prompt, re.S)
+        question = question_match.group(1).strip() if question_match else ""
+        context = prompt.split("Context:\n", maxsplit=1)[1].strip()
+        matches = re.findall(r"\[(\d+)\]\s+(.+?)\n(.*?)(?=\n\n\[\d+\]\s+|\Z)", context, re.S)
+        blocks = [
+            {"document": document.strip(), "location": "", "text": text.strip()}
+            for _, document, text in matches
+        ]
+        return question, blocks
+
     def _parse_context_blocks(self, context: str) -> list[dict[str, str]]:
         matches = re.findall(r"\[(\d+)\]\s+(.+?)\s+\((.*?)\)\n(.*?)(?=\n\n\[\d+\]\s+|\Z)", context, re.S)
         return [
@@ -87,7 +101,7 @@ class StubLLMProvider(LLMProvider):
         selected = self._dedupe_preserve_order(sentences)[:3]
         if not selected:
             return "I do not know based on the available documents."
-        return "Summary:\n- " + "\n- ".join(selected)
+        return "## Overview\n" + selected[0] + "\n\n## Key points\n- " + "\n- ".join(selected[1:] or selected[:1])
 
     def _compare_blocks(self, blocks: list[dict[str, str]], question: str) -> str:
         by_document: dict[str, list[str]] = defaultdict(list)
@@ -104,10 +118,18 @@ class StubLLMProvider(LLMProvider):
 
         common_terms = self._top_terms(" ".join(by_document[left]), " ".join(by_document[right]))
         lines = [
-            f"Comparison of {left} and {right}:",
-            f"- Common ground: both documents focus on {common_terms}.",
+            "## Summary",
+            f"Both documents cover {common_terms}, but they emphasize different operational details.",
+            "",
+            "## Similarities",
+            f"- Both documents focus on {common_terms}.",
+            "",
+            "## Differences",
             f"- {left}: " + " ".join(left_points),
             f"- {right}: " + " ".join(right_points),
+            "",
+            "## Implications",
+            "- Teams should align escalation expectations and clarify when incident commander involvement is required.",
         ]
         return "\n".join(lines)
 
@@ -117,13 +139,13 @@ class StubLLMProvider(LLMProvider):
             return "I do not know based on the available documents."
 
         if "concise summary" in instruction.lower():
-            return "Summary:\n- " + "\n- ".join(selected)
+            return "## Summary\n- " + "\n- ".join(selected)
         if "actionable steps" in instruction.lower():
-            return "\n".join(f"{index}. {sentence}" for index, sentence in enumerate(selected, start=1))
+            return "## Steps\n" + "\n".join(f"{index}. {sentence}" for index, sentence in enumerate(selected, start=1))
         if "risks and caveats" in instruction.lower():
-            return "Risks and caveats:\n- " + "\n- ".join(selected)
+            return "## Risks\n- " + "\n- ".join(selected)
         if "faq style" in instruction.lower():
-            return f"Q: {question}\nA: {selected[0]}"
+            return f"## FAQ\n**Q:** {question}\n**A:** {selected[0]}"
         return " ".join(selected)
 
     def _select_relevant_sentences(self, question: str, blocks: list[dict[str, str]]) -> list[str]:

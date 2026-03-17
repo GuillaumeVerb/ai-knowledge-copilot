@@ -1,6 +1,6 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from backend.models.query import SourceSnippet
+from backend.models.query import SourceSnippet, StructuredBlock
 
 
 class DocumentSummaryResponse(BaseModel):
@@ -8,3 +8,4 @@ class DocumentSummaryResponse(BaseModel):
     summary: str
     sources: list[SourceSnippet]
     latency_ms: int
+    sections: list[StructuredBlock] = Field(default_factory=list)

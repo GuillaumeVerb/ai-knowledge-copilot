@@ -18,13 +18,19 @@ def test_upload_query_summary_and_delete(temp_env):
     )
     assert query_response.status_code == 200
     assert query_response.json()["used_context_count"] >= 1
+    assert query_response.json()["sections"]
 
     summary_response = client.post(f"/documents/{document_id}/summary")
     assert summary_response.status_code == 200
+    assert summary_response.json()["sections"]
 
     history_response = client.get("/history")
     assert history_response.status_code == 200
     assert len(history_response.json()) >= 1
+
+    health_response = client.get("/health")
+    assert health_response.status_code == 200
+    assert "llm_mode" in health_response.json()
 
     delete_response = client.delete(f"/documents/{document_id}")
     assert delete_response.status_code == 200

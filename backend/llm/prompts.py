@@ -24,11 +24,11 @@ def build_query_prompt(question: str, sources: list[SourceSnippet], answer_forma
             f"[{index}] {source.document_name} ({location_text})\n{source.excerpt}"
         )
     instruction = {
-        "default": "Answer directly.",
-        "resume": "Provide a concise summary.",
-        "etapes": "Provide the answer as actionable steps.",
-        "risques": "Highlight the main risks and caveats.",
-        "faq": "Answer in short FAQ style bullets.",
+        "default": "Answer directly in 1 short paragraph using only the most relevant evidence.",
+        "resume": "Provide a concise summary in 3 to 5 bullets.",
+        "etapes": "Provide the answer as actionable numbered steps.",
+        "risques": "Highlight the main risks and caveats in bullets.",
+        "faq": "Answer in short FAQ style with a direct answer.",
     }[answer_format]
     return (
         f"{instruction}\n\n"
@@ -44,4 +44,17 @@ def build_summary_prompt(document_name: str, sources: list[SourceSnippet]) -> st
     )
     return (
         f"Summarize the document '{document_name}' using only the following extracted context.\n\n{context}"
+    )
+
+
+def build_compare_prompt(question: str, left_name: str, right_name: str, sources: list[SourceSnippet]) -> str:
+    formatted_sources = []
+    for index, source in enumerate(sources, start=1):
+        formatted_sources.append(f"[{index}] {source.document_name}\n{source.excerpt}")
+    return (
+        "Compare the two documents and structure the answer with: Summary, Similarities, Differences, Implications.\n\n"
+        f"Question: {question}\n"
+        f"Left document: {left_name}\n"
+        f"Right document: {right_name}\n\n"
+        "Context:\n" + "\n\n".join(formatted_sources)
     )

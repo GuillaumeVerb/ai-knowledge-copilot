@@ -1,132 +1,143 @@
 # AI Knowledge Copilot
 
-AI Knowledge Copilot is a document-focused RAG assistant built with FastAPI, Streamlit, SQLite, OpenAI, and Qdrant. It lets teams upload internal documents, ask grounded questions, review cited sources, summarize documents, compare documents, and inspect recent query history.
+AI Knowledge Copilot is a portfolio-ready document intelligence assistant built to answer grounded questions across internal procedures, handbooks, support guides, and knowledge-base style content. It combines retrieval, source citations, document summaries, and document comparison in a simple product demo that can evolve into a more serious SaaS or internal tool.
 
-## Features
+## Problem
 
-- Upload and index `PDF`, `DOCX`, `TXT`, and `MD` files
-- Chunking with metadata for page-level citations
-- Vector search with `Qdrant`
-- Grounded Q&A with sources
-- Document summaries
-- Document comparison
-- Query history
-- Streamlit demo UI
-- Dockerized local stack
+Teams lose time searching through scattered documentation, repeating the same questions, and relying on subject-matter experts for routine information retrieval. Traditional keyword search often returns too much noise and too little confidence.
 
-## Project structure
+## Solution
 
-```text
-backend/
-  api/
-  core/
-  ingestion/
-  llm/
-  models/
-  repositories/
-  retrieval/
-frontend/
-data/
-tests/
-docker/
-```
+AI Knowledge Copilot provides:
 
-## Prerequisites
+- natural-language questions over uploaded documents
+- grounded answers with citations
+- structured summaries
+- document-to-document comparison
+- a lightweight but extensible architecture for future SaaS growth
 
-- Python 3.9+
-- Docker and Docker Compose for the full local stack
-- Optional: OpenAI API key for production-grade embeddings and responses
+The current V2 focuses on two goals at once:
 
-## Local setup
+- a premium portfolio demo
+- a commercially credible foundation for selling knowledge copilot work
 
-1. Create a virtual environment and install dependencies:
+## What this proves
+
+- RAG architecture with ingestion, chunking, retrieval, reranking, and answer generation
+- product thinking beyond a raw LLM wrapper
+- source-aware outputs and retrieval quality controls
+- separation of backend logic from UI
+- deployable local stack with tests, demo dataset, and Docker assets
+
+## Demo highlights
+
+- Upload `PDF`, `DOCX`, `TXT`, and `MD` documents
+- Ask grounded questions with filtered source display
+- Generate structured document summaries
+- Compare two documents with similarities, differences, and operational implications
+- Review recent query history
+- Seed a demo dataset for portfolio screenshots and walkthroughs
+
+## Stack
+
+- Backend: FastAPI, Pydantic, SQLite
+- Retrieval: Qdrant or in-memory fallback, configurable reranking
+- LLM: OpenAI Responses API or local fallback mode
+- Frontend: Streamlit
+- Dev experience: Docker Compose, test suite, demo scripts
+
+## Runtime modes
+
+- Recommended demo mode: `OpenAI + Qdrant`
+- Local development mode: local fallback summarization + in-memory retrieval fallback
+
+The local fallback exists to keep the app runnable without external services, but the best client-facing demo quality comes from setting `OPENAI_API_KEY`.
+
+## Core flows
+
+### 1. Ask the knowledge base
+
+- ask a question in natural language
+- retrieve the most relevant chunks
+- narrow context before answer generation
+- return a concise answer plus only the truly relevant sources
+
+### 2. Summarize a document
+
+- summarize one document into an overview and key points
+- keep the summary scoped to the selected document only
+
+### 3. Compare two documents
+
+- compare procedures or policies side by side
+- surface common ground, differences, and likely operational impact
+
+## Screenshots to capture
+
+- document upload and indexed library
+- grounded answer with one relevant source
+- structured summary output
+- structured comparison output
+
+## Quick start
+
+### Local setup
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-```
-
-2. Copy the environment file:
-
-```bash
 cp .env.example .env
 ```
 
-3. Start Qdrant:
+### Start the full local demo
 
 ```bash
-docker compose up qdrant -d
-```
-
-4. Run the backend:
-
-```bash
-uvicorn backend.main:app --reload
-```
-
-5. Run the frontend:
-
-```bash
-streamlit run frontend/app.py
-```
-
-## Quick demo flow
-
-If you want the seeded portfolio demo flow:
-
-```bash
-cp .env.example .env
 ./scripts/start_demo.sh
 ```
 
-This will:
+Demo ports:
 
-- start the FastAPI backend
-- seed the demo documents from `data/demo_docs/`
-- start the demo on dedicated ports to avoid local conflicts:
-  - backend: `http://localhost:8010`
-  - Streamlit: `http://localhost:8502`
+- Backend: `http://localhost:8010`
+- Streamlit: `http://localhost:8502`
 
-To stop both services:
+Stop the demo:
 
 ```bash
 ./scripts/stop_demo.sh
 ```
 
-## Docker setup
+### Manual setup
 
 ```bash
-cp .env.example .env
-docker compose up --build
+docker compose up qdrant -d
+uvicorn backend.main:app --reload
+streamlit run frontend/app.py
 ```
 
-Frontend: `http://localhost:8501`
-
-Backend API: `http://localhost:8000`
-
-Qdrant: `http://localhost:6333`
-
-## API endpoints
+## API
 
 - `GET /health`
-- `POST /documents/upload`
 - `GET /documents`
+- `POST /documents/upload`
 - `DELETE /documents/{id}`
+- `POST /documents/{id}/summary`
 - `POST /query`
 - `POST /query/compare`
-- `POST /documents/{id}/summary`
 - `GET /history`
 - `POST /reindex`
+- `POST /demo/seed`
 
-## Environment variables
+## Demo script
 
-- `OPENAI_API_KEY`: optional. If omitted, the app falls back to a stub LLM and hash-based embeddings for local development/tests.
-- `OPENAI_MODEL`: default response model.
-- `EMBEDDING_MODEL`: default embeddings model.
-- `QDRANT_URL`: Qdrant endpoint.
-- `SQLITE_PATH`: local metadata database path.
-- `UPLOAD_DIR`: uploaded files location.
+Suggested 60 to 90 second walkthrough:
+
+1. Show the demo dataset already loaded
+2. Ask: `What is the remote work policy?`
+3. Show the concise answer and single relevant source
+4. Summarize the HR handbook
+5. Compare `product_guide.md` and `support_procedure.txt`
+6. Close on the architecture and extensibility story
 
 ## Testing
 
@@ -134,18 +145,54 @@ Qdrant: `http://localhost:6333`
 PYTHONPATH=. .venv/bin/pytest
 ```
 
-## Demo dataset
+## Deployment target
 
-Add non-sensitive showcase documents in `data/demo_docs/`. The repository already includes seed demo files for HR, support, product, internal policy, and reporting use cases.
+The app is structured to support a live demo deployment with:
 
-You can seed them manually with:
+- pre-seeded non-sensitive documents
+- FastAPI backend
+- Streamlit frontend
+- environment-driven OpenAI configuration
 
-```bash
-PYTHONPATH=. .venv/bin/python scripts/seed_demo_data.py
-```
+Recommended next deployment step:
 
-## Notes
+- Render or Railway for backend
+- Streamlit Community Cloud or containerized deployment for frontend
 
-- The business logic lives in FastAPI services and repositories, not in Streamlit, so the backend can later be reused by a React frontend.
-- The LLM, embeddings, and vector store are abstracted enough to support future provider changes.
-- Current V2 implementation includes filters, comparison, reranking, and structured answer formats.
+## Current limitations
+
+- no authentication or workspaces yet
+- local fallback mode is less polished than OpenAI mode
+- Streamlit is intentionally kept as a fast product demo, not a final SaaS frontend
+- no external connectors yet
+
+## Roadmap
+
+### V2
+
+- better answer structuring
+- cleaner comparison output
+- source narrowing
+- stronger demo UX
+- better portfolio packaging
+
+### V3
+
+- authentication
+- workspaces
+- permissions
+- connectors
+- analytics
+
+## Repository metadata
+
+Suggested GitHub topics:
+
+- `rag`
+- `fastapi`
+- `streamlit`
+- `openai`
+- `knowledge-base`
+- `document-search`
+- `ai-assistant`
+- `portfolio-project`

@@ -30,6 +30,13 @@ class SourceSnippet(BaseModel):
     score: Optional[float] = None
 
 
+class StructuredBlock(BaseModel):
+    title: str
+    kind: Literal["summary", "bullets", "numbered", "warning", "faq", "comparison"]
+    content: str = ""
+    items: list[str] = Field(default_factory=list)
+
+
 class QueryResponse(BaseModel):
     answer: str
     sources: list[SourceSnippet]
@@ -37,6 +44,8 @@ class QueryResponse(BaseModel):
     latency_ms: int
     status: Literal["answered", "not_found"]
     answer_format: AnswerFormat = "default"
+    sections: list[StructuredBlock] = Field(default_factory=list)
+    comparison_mode: bool = False
 
 
 class CompareDocumentsRequest(BaseModel):

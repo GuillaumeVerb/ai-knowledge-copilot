@@ -3,12 +3,20 @@ from __future__ import annotations
 import logging
 import re
 import time
+from collections import defaultdict
 
 from backend.llm.answer_formatter import format_citations
 from backend.llm.generator import LLMProvider
-from backend.llm.prompts import build_query_prompt, build_summary_prompt
+from backend.llm.prompts import build_compare_prompt, build_query_prompt, build_summary_prompt
 from backend.models.answer import DocumentSummaryResponse
-from backend.models.query import CompareDocumentsRequest, QueryFilters, QueryRequest, QueryResponse, SourceSnippet
+from backend.models.query import (
+    CompareDocumentsRequest,
+    QueryFilters,
+    QueryRequest,
+    QueryResponse,
+    SourceSnippet,
+    StructuredBlock,
+)
 from backend.repositories.documents_repo import DocumentsRepository
 from backend.repositories.qa_history_repo import QueryHistoryRepository
 from backend.retrieval.retriever import RetrievalService
@@ -58,6 +66,12 @@ class QueryService:
         )
         if not sources:
             sources = self._fallback_sources(request.question, request.filters, request.top_k or 5)
+        sources = self._narrow_sources_for_query(
+            request.question,
+            sources,
+            request.answer_format,
+            max_sources=2 if request.answer_format == "default" else 3,
+        )
         if not sources:
             latency_ms = int((time.perf_counter() - start) * 1000)
             answer = "Je ne sais pas sur la base des documents disponibles."
@@ -75,11 +89,24 @@ class QueryService:
                 latency_ms=latency_ms,
                 status="not_found",
                 answer_format=request.answer_format,
+                sections=[
+                    StructuredBlock(
+                        title="No answer found",
+                        kind="warning",
+                        content="The requested information is not available in the current document set.",
+                    )
+                ],
             )
         prompt = build_query_prompt(request.question, sources, request.answer_format)
         raw_answer = self.llm_provider.generate(prompt)
         display_sources = self._select_display_sources(raw_answer, sources)
         answer = format_citations(raw_answer, display_sources)
+        sections = self._build_answer_sections(
+            request.question,
+            request.answer_format,
+            raw_answer,
+            display_sources,
+        )
         latency_ms = int((time.perf_counter() - start) * 1000)
         self.history_repository.create_entry(
             question=request.question,
@@ -95,6 +122,8 @@ class QueryService:
             latency_ms=latency_ms,
             status="answered",
             answer_format=request.answer_format,
+            sections=sections,
+            comparison_mode=False,
         )
 
     def summarize_document(self, document_id: str) -> DocumentSummaryResponse:
@@ -113,6 +142,7 @@ class QueryService:
             )
             for chunk in chunks
         ]
+        sources = sources[:4]
         prompt = build_summary_prompt(document.original_filename, sources)
         raw_summary = self.llm_provider.generate(prompt)
         display_sources = self._select_display_sources(raw_summary, sources)
@@ -123,26 +153,69 @@ class QueryService:
             summary=summary,
             sources=display_sources,
             latency_ms=latency_ms,
+            sections=self._build_summary_sections(raw_summary, display_sources),
         )
 
     def compare_documents(self, request: CompareDocumentsRequest) -> QueryResponse:
         left_document = self.documents_repository.get_document(request.left_document_id)
         right_document = self.documents_repository.get_document(request.right_document_id)
-        compare_request = QueryRequest(
-            question=(
-                f"{request.question}\n"
-                f"Compare the documents '{left_document.original_filename}' and '{right_document.original_filename}'. "
-                "Highlight agreements, differences, and missing information."
-            ),
-            filters=QueryFilters(
-                document_ids=[request.left_document_id, request.right_document_id],
-                tags=[],
-            ),
-            answer_format=request.answer_format,
+        start = time.perf_counter()
+        left_sources = self.retrieval_service.retrieve(
+            request.question,
+            filters=QueryFilters(document_ids=[request.left_document_id], tags=[]),
+            top_k=2,
             use_reranking=True,
-            top_k=8,
         )
-        return self.answer_query(compare_request)
+        right_sources = self.retrieval_service.retrieve(
+            request.question,
+            filters=QueryFilters(document_ids=[request.right_document_id], tags=[]),
+            top_k=2,
+            use_reranking=True,
+        )
+        sources = self._narrow_sources_for_query(
+            request.question,
+            left_sources + right_sources,
+            request.answer_format,
+            max_sources=4,
+        )
+        if not sources:
+            sources = self._fallback_sources(
+                request.question,
+                QueryFilters(document_ids=[request.left_document_id, request.right_document_id], tags=[]),
+                4,
+            )
+        prompt = build_compare_prompt(
+            request.question,
+            left_document.original_filename,
+            right_document.original_filename,
+            sources,
+        )
+        raw_answer = self.llm_provider.generate(prompt)
+        display_sources = self._select_display_sources(raw_answer, sources, max_sources=4)
+        answer = format_citations(raw_answer, display_sources)
+        sections = self._build_comparison_sections(
+            left_document.original_filename,
+            right_document.original_filename,
+            display_sources,
+        )
+        latency_ms = int((time.perf_counter() - start) * 1000)
+        self.history_repository.create_entry(
+            question=request.question,
+            answer=answer,
+            sources_json=[source.model_dump() for source in display_sources],
+            filters_json={"document_ids": [request.left_document_id, request.right_document_id], "tags": []},
+            latency_ms=latency_ms,
+        )
+        return QueryResponse(
+            answer=answer,
+            sources=display_sources,
+            used_context_count=len(display_sources),
+            latency_ms=latency_ms,
+            status="answered" if display_sources else "not_found",
+            answer_format=request.answer_format,
+            sections=sections,
+            comparison_mode=True,
+        )
 
     def _fallback_sources(
         self,
@@ -216,3 +289,140 @@ class QueryService:
         if selected:
             return selected
         return sources[:1]
+
+    def _narrow_sources_for_query(
+        self,
+        question: str,
+        sources: list[SourceSnippet],
+        answer_format: str,
+        max_sources: int,
+    ) -> list[SourceSnippet]:
+        if not sources:
+            return []
+        question_tokens = set(self._tokenize(question))
+        narrowed: list[tuple[int, float, SourceSnippet]] = []
+        for source in sources:
+            excerpt_tokens = set(self._tokenize(source.excerpt))
+            overlap = len(question_tokens & excerpt_tokens)
+            if overlap == 0 and answer_format == "default":
+                continue
+            narrowed.append((overlap, source.score or 0.0, source))
+        narrowed.sort(key=lambda item: (item[0], item[1]), reverse=True)
+        selected = [source for overlap, _, source in narrowed if overlap > 0][:max_sources]
+        if selected:
+            return selected
+        return sources[:max_sources]
+
+    def _build_answer_sections(
+        self,
+        question: str,
+        answer_format: str,
+        answer: str,
+        sources: list[SourceSnippet],
+    ) -> list[StructuredBlock]:
+        clean_answer = self._strip_sources_line(answer)
+        if answer_format == "resume":
+            return [
+                StructuredBlock(title="Summary", kind="bullets", items=self._extract_bullets(clean_answer, fallback_limit=4))
+            ]
+        if answer_format == "etapes":
+            return [
+                StructuredBlock(title="Steps", kind="numbered", items=self._extract_bullets(clean_answer, fallback_limit=4))
+            ]
+        if answer_format == "risques":
+            return [
+                StructuredBlock(title="Risks", kind="warning", items=self._extract_bullets(clean_answer, fallback_limit=4))
+            ]
+        if answer_format == "faq":
+            return [
+                StructuredBlock(title="FAQ", kind="faq", content=f"Q: {question}\nA: {clean_answer}")
+            ]
+        return [
+            StructuredBlock(title="Summary", kind="summary", content=clean_answer),
+            StructuredBlock(
+                title="Sources used",
+                kind="bullets",
+                items=[f"{source.document_name}" + (f" p.{source.page_number}" if source.page_number else "") for source in sources],
+            ),
+        ]
+
+    def _build_summary_sections(
+        self,
+        summary: str,
+        sources: list[SourceSnippet],
+    ) -> list[StructuredBlock]:
+        clean_summary = self._strip_sources_line(summary)
+        bullets = self._extract_bullets(clean_summary, fallback_limit=4)
+        overview = bullets[0] if bullets else clean_summary
+        extra_points = bullets[1:] if len(bullets) > 1 else bullets[:1]
+        return [
+            StructuredBlock(title="Overview", kind="summary", content=overview),
+            StructuredBlock(title="Key points", kind="bullets", items=extra_points),
+            StructuredBlock(
+                title="Sources",
+                kind="bullets",
+                items=[f"{source.document_name}" + (f" p.{source.page_number}" if source.page_number else "") for source in sources],
+            ),
+        ]
+
+    def _build_comparison_sections(
+        self,
+        left_name: str,
+        right_name: str,
+        sources: list[SourceSnippet],
+    ) -> list[StructuredBlock]:
+        by_document: dict[str, list[str]] = defaultdict(list)
+        for source in sources:
+            by_document[source.document_name].extend(self._split_sentences(source.excerpt))
+
+        left_points = self._dedupe_preserve_order(by_document.get(left_name, []))[:2]
+        right_points = self._dedupe_preserve_order(by_document.get(right_name, []))[:2]
+        left_terms = set(self._tokenize(" ".join(by_document.get(left_name, []))))
+        right_terms = set(self._tokenize(" ".join(by_document.get(right_name, []))))
+        similarities = sorted(left_terms & right_terms)[:3]
+
+        return [
+            StructuredBlock(
+                title="Summary",
+                kind="comparison",
+                content=f"{left_name} and {right_name} cover related procedures but emphasize different operational details.",
+            ),
+            StructuredBlock(
+                title="Points communs",
+                kind="bullets",
+                items=[f"Both documents mention {', '.join(similarities)}."] if similarities else ["Both documents address the same operational theme."],
+            ),
+            StructuredBlock(
+                title="Différences",
+                kind="bullets",
+                items=[f"{left_name}: {point}" for point in left_points] + [f"{right_name}: {point}" for point in right_points],
+            ),
+            StructuredBlock(
+                title="Impact opérationnel",
+                kind="warning",
+                items=["Align escalation expectations across teams and clarify who owns each step."],
+            ),
+        ]
+
+    def _extract_bullets(self, text: str, fallback_limit: int = 4) -> list[str]:
+        explicit = [line.strip("- ").strip() for line in text.splitlines() if line.strip().startswith("-")]
+        if explicit:
+            return explicit[:fallback_limit]
+        return self._split_sentences(text)[:fallback_limit]
+
+    def _strip_sources_line(self, text: str) -> str:
+        return re.sub(r"\n\s*Sources:\s.*$", "", text, flags=re.S).strip()
+
+    def _split_sentences(self, text: str) -> list[str]:
+        return [part.strip(" -") for part in re.split(r"(?<=[.!?])\s+|\n+", text) if part.strip()]
+
+    def _dedupe_preserve_order(self, values: list[str]) -> list[str]:
+        seen = set()
+        result = []
+        for value in values:
+            normalized = value.lower()
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            result.append(value)
+        return result

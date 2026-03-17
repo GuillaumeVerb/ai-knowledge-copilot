@@ -107,3 +107,15 @@ def get_query_service() -> QueryService:
         enable_reranking=settings.enable_reranking,
         max_summary_chunks=settings.max_summary_chunks,
     )
+
+
+def get_runtime_info() -> dict[str, str]:
+    settings = get_settings()
+    llm_mode = "openai" if settings.openai_api_key else "local-fallback"
+    vector_store = get_vector_store()
+    retrieval_mode = "qdrant" if isinstance(vector_store, QdrantVectorStore) else "in-memory"
+    return {
+        "llm_mode": llm_mode,
+        "retrieval_mode": retrieval_mode,
+        "recommended_mode": "openai",
+    }

@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import mimetypes
 from pathlib import Path
 from typing import Any, Optional
 from uuid import uuid4
@@ -131,3 +132,23 @@ class DocumentIngestionService:
             )
         self.vector_store.recreate(vectors)
         return len(vectors)
+
+    def seed_demo_documents(self, demo_dir: Path) -> dict[str, int]:
+        existing_names = {document.original_filename for document in self.documents_repo.list_documents()}
+        seeded = 0
+        skipped = 0
+        for path in sorted(demo_dir.iterdir()):
+            if not path.is_file():
+                continue
+            if path.name in existing_names:
+                skipped += 1
+                continue
+            mime_type, _ = mimetypes.guess_type(str(path))
+            self.ingest_upload(
+                filename=path.name,
+                mime_type=mime_type or "text/plain",
+                content=path.read_bytes(),
+                tags=["demo"],
+            )
+            seeded += 1
+        return {"seeded": seeded, "skipped": skipped}

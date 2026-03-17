@@ -39,5 +39,5 @@ def test_stub_llm_produces_document_summary():
     prompt = build_summary_prompt("hr_handbook.txt", sources)
     answer = provider.generate(prompt)
 
-    assert "Summary:" in answer
+    assert "## Overview" in answer
     assert "Vacation requests" in answer

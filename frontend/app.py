@@ -80,6 +80,52 @@ def render_source(source: dict[str, Any]) -> None:
     )
 
 
+def render_section(section: dict[str, Any]) -> None:
+    title = section["title"]
+    kind = section["kind"]
+    content = section.get("content", "")
+    items = section.get("items", [])
+
+    with st.expander(title, expanded=kind in {"summary", "comparison"}):
+        if content:
+            if kind == "warning":
+                st.warning(content)
+            else:
+                st.markdown(content)
+        if items:
+            if kind == "numbered":
+                for index, item in enumerate(items, start=1):
+                    st.markdown(f"{index}. {item}")
+            else:
+                for item in items:
+                    st.markdown(f"- {item}")
+
+
+def render_result(response: dict[str, Any], *, comparison: bool = False) -> None:
+    title = "Comparison result" if comparison else "Answer"
+    st.markdown(f"### {title}")
+    if response["status"] == "not_found":
+        st.warning(response["answer"])
+        return
+
+    if response.get("sections"):
+        first_section = response["sections"][0]
+        summary_content = first_section.get("content") or "\n".join(first_section.get("items", []))
+        st.info(summary_content)
+        for section in response["sections"][1:]:
+            render_section(section)
+    else:
+        st.write(response["answer"])
+
+    st.caption(
+        f"Latency: {response['latency_ms']} ms | Sources shown: {response['used_context_count']} | Status: {response['status']}"
+    )
+    if response.get("sources"):
+        with st.expander("Sources", expanded=True):
+            for source in response["sources"]:
+                render_source(source)
+
+
 def render_history_item(item: dict[str, Any]) -> None:
     with st.container(border=True):
         st.markdown(f"**Q:** {item['question']}")
@@ -91,6 +137,7 @@ try:
     health = api_get("/health")
     api_online = health.get("status") == "ok"
 except Exception:
+    health = {}
     api_online = False
 
 documents = api_get("/documents") if api_online else []
@@ -103,8 +150,8 @@ st.markdown(
     <div class="hero">
         <h1 style="margin:0 0 0.35rem 0;">AI Knowledge Copilot</h1>
         <p style="margin:0; font-size:1.02rem; max-width:800px;">
-            Upload internal knowledge, ask grounded questions, compare documents, and demo sourced AI answers
-            in a polished interface ready for portfolio use.
+            Portfolio-ready knowledge assistant for internal documents with grounded answers, structured summaries,
+            useful comparisons, and source-backed outputs.
         </p>
     </div>
     """,
@@ -115,18 +162,33 @@ with st.sidebar:
     st.subheader("Workspace")
     if api_online:
         st.success("Backend connected")
+        llm_mode = health.get("llm_mode", "unknown")
+        retrieval_mode = health.get("retrieval_mode", "unknown")
+        if llm_mode == "openai":
+            st.info("Mode: OpenAI production-grade")
+        else:
+            st.warning("Mode: local fallback")
+            st.caption("OpenAI key recommended for best demo quality.")
+        st.caption(f"Retrieval: {retrieval_mode}")
     else:
         st.error("Backend unavailable")
         st.caption("Expected API base URL: " + API_BASE_URL)
+
     st.markdown("### Quick stats")
     st.metric("Documents", len(documents))
     st.metric("Indexed", indexed_count)
     st.metric("History entries", len(history))
-    st.markdown("### Demo flow")
-    st.caption("1. Seed or upload documents")
-    st.caption("2. Ask a grounded question")
-    st.caption("3. Inspect sources and excerpts")
-    st.caption("4. Compare two procedures")
+
+    if api_online and st.button("Seed demo data", use_container_width=True):
+        result = api_post("/demo/seed")
+        st.success(f"Seeded {result['seeded']} docs, skipped {result['skipped']}.")
+        st.rerun()
+
+    st.markdown("### Try these questions")
+    st.caption("RH: What is the remote work policy?")
+    st.caption("Support: How should a severity one incident be escalated?")
+    st.caption("Security: What are the key rules for handling sensitive data?")
+    st.caption("Ops: Compare incident escalation procedures")
 
 metric_col1, metric_col2, metric_col3 = st.columns(3)
 metric_col1.markdown(
@@ -177,7 +239,16 @@ with tab_documents:
             col1.caption(f"Status: {document['status']} | Tags: {', '.join(document['tags']) or 'none'}")
             if col2.button("Summarize", key=f"summary_{document['id']}", use_container_width=True):
                 summary = api_post(f"/documents/{document['id']}/summary")
-                st.info(summary["summary"])
+                render_result(
+                    {
+                        "answer": summary["summary"],
+                        "sections": summary.get("sections", []),
+                        "sources": summary.get("sources", []),
+                        "latency_ms": summary["latency_ms"],
+                        "used_context_count": len(summary.get("sources", [])),
+                        "status": "answered",
+                    }
+                )
             if col3.button("Delete", key=f"delete_{document['id']}", use_container_width=True):
                 api_delete(f"/documents/{document['id']}")
                 st.rerun()
@@ -191,13 +262,15 @@ with tab_chat:
     if "question_input" not in st.session_state:
         st.session_state["question_input"] = ""
 
-    quick_question_cols = st.columns(3)
-    if quick_question_cols[0].button("Remote work policy", use_container_width=True):
+    quick_question_cols = st.columns(4)
+    if quick_question_cols[0].button("Remote work", use_container_width=True):
         st.session_state["question_input"] = "What is the remote work policy?"
-    if quick_question_cols[1].button("Incident escalation", use_container_width=True):
+    if quick_question_cols[1].button("Escalation", use_container_width=True):
         st.session_state["question_input"] = "How should a severity one incident be escalated?"
-    if quick_question_cols[2].button("Security rules", use_container_width=True):
+    if quick_question_cols[2].button("Security", use_container_width=True):
         st.session_state["question_input"] = "What are the key rules for handling sensitive data?"
+    if quick_question_cols[3].button("Onboarding", use_container_width=True):
+        st.session_state["question_input"] = "What should new hires receive during onboarding?"
 
     question = st.text_area(
         "Question",
@@ -217,14 +290,7 @@ with tab_chat:
         }
         with st.spinner("Generating answer..."):
             response = api_post("/query", json=payload)
-        st.markdown("### Answer")
-        st.write(response["answer"])
-        st.caption(
-            f"Latency: {response['latency_ms']} ms | Context chunks: {response['used_context_count']} | Status: {response['status']}"
-        )
-        st.markdown("### Sources")
-        for source in response["sources"]:
-            render_source(source)
+        render_result(response)
 
     st.subheader("Compare two documents")
     left_document = st.selectbox("Left document", options=[""] + list(document_options.keys()), key="left_doc")
@@ -243,10 +309,7 @@ with tab_chat:
         }
         with st.spinner("Comparing documents..."):
             response = api_post("/query/compare", json=payload)
-        st.write(response["answer"])
-        st.caption(f"Latency: {response['latency_ms']} ms")
-        for source in response["sources"]:
-            render_source(source)
+        render_result(response, comparison=True)
 
     st.subheader("Recent history")
     for item in history:
