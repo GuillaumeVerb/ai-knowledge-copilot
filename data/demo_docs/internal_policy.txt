@@ -1,0 +1,3 @@
+Internal policy: confidential customer data must not be pasted into public tools.
+Sensitive documents should be stored in approved systems only.
+Access requests must be reviewed by the team manager and security contact.

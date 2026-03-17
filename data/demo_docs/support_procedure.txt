@@ -1,0 +1,3 @@
+Support agents should collect account ID, issue summary, and reproduction steps before escalating a ticket.
+If an outage affects more than one customer, escalate to the incident commander immediately.
+Resolved incidents require a short post-incident summary within one business day.
