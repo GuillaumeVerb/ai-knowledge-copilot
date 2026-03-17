@@ -42,6 +42,7 @@ def temp_env(tmp_path: Path):
     )
     retrieval_service = RetrievalService(
         vector_store=vector_store,
+        documents_repository=documents_repo,
         reranker=KeywordOverlapReranker(),
         default_top_k=4,
         fetch_k=8,

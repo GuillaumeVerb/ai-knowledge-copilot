@@ -25,12 +25,20 @@ nohup env PYTHONPATH=. .venv/bin/uvicorn backend.main:app --host 0.0.0.0 --port 
 BACKEND_PID=$!
 echo "$BACKEND_PID" > .run/backend.pid
 
+BACKEND_READY=0
 for _ in {1..30}; do
   if curl -fsS "${BACKEND_URL}/health" > /dev/null 2>&1; then
+    BACKEND_READY=1
     break
   fi
   sleep 1
 done
+
+if [[ "${BACKEND_READY}" -ne 1 ]]; then
+  echo "Backend failed to start on ${BACKEND_URL}"
+  tail -n 80 .run/backend.log || true
+  exit 1
+fi
 
 echo "Reindexing backend state"
 curl -fsS -X POST "${BACKEND_URL}/reindex" >> .run/backend.log 2>&1 || true

@@ -1,7 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from backend.core.dependencies import get_query_service
-from backend.models.query import CompareDocumentsRequest, QueryRequest, QueryResponse
+from backend.models.query import (
+    CompareDocumentsRequest,
+    QueryRequest,
+    QueryResponse,
+    SynthesizeDocumentsRequest,
+)
 from backend.services import QueryService
 
 
@@ -23,5 +28,16 @@ def compare_documents(
 ) -> QueryResponse:
     try:
         return query_service.compare_documents(request)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/query/synthesize", response_model=QueryResponse)
+def synthesize_documents(
+    request: SynthesizeDocumentsRequest,
+    query_service: QueryService = Depends(get_query_service),
+) -> QueryResponse:
+    try:
+        return query_service.synthesize_documents(request)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

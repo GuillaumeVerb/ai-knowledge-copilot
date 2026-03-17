@@ -12,6 +12,11 @@ CREATE TABLE IF NOT EXISTS documents (
     size_bytes INTEGER NOT NULL,
     source_type TEXT NOT NULL DEFAULT 'upload',
     workspace_id TEXT,
+    category TEXT,
+    document_date TEXT,
+    version_group_id TEXT,
+    version_number INTEGER NOT NULL DEFAULT 1,
+    supersedes_document_id TEXT,
     tags TEXT NOT NULL DEFAULT '[]',
     storage_path TEXT NOT NULL,
     status TEXT NOT NULL,
@@ -57,7 +62,38 @@ def create_connection(db_path: Path) -> sqlite3.Connection:
 
 def initialize_database(connection: sqlite3.Connection) -> None:
     connection.executescript(SCHEMA_SQL)
+    _ensure_column(connection, "documents", "category", "TEXT")
+    _ensure_column(connection, "documents", "document_date", "TEXT")
+    _ensure_column(connection, "documents", "version_group_id", "TEXT")
+    _ensure_column(connection, "documents", "version_number", "INTEGER NOT NULL DEFAULT 1")
+    _ensure_column(connection, "documents", "supersedes_document_id", "TEXT")
+    _ensure_column(connection, "query_history", "feedback_note", "TEXT")
+    _ensure_column(connection, "query_history", "updated_at", "TEXT")
+    connection.execute(
+        """
+        UPDATE documents
+        SET version_group_id = id
+        WHERE version_group_id IS NULL OR version_group_id = ''
+        """
+    )
     connection.commit()
+
+
+def _ensure_column(
+    connection: sqlite3.Connection,
+    table_name: str,
+    column_name: str,
+    column_definition: str,
+) -> None:
+    existing_columns = {
+        row["name"]
+        for row in connection.execute(f"PRAGMA table_info({table_name})").fetchall()
+    }
+    if column_name in existing_columns:
+        return
+    connection.execute(
+        f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_definition}"
+    )
 
 
 @contextmanager

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
@@ -10,6 +10,9 @@ AnswerFormat = Literal["default", "resume", "etapes", "risques", "faq"]
 class QueryFilters(BaseModel):
     document_ids: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
+    categories: list[str] = Field(default_factory=list)
+    date_from: Optional[date] = None
+    date_to: Optional[date] = None
 
 
 class QueryRequest(BaseModel):
@@ -46,6 +49,10 @@ class QueryResponse(BaseModel):
     answer_format: AnswerFormat = "default"
     sections: list[StructuredBlock] = Field(default_factory=list)
     comparison_mode: bool = False
+    confidence_label: Literal["high", "medium", "low"] = "low"
+    confidence_score: float = 0.0
+    confidence_reason: str = ""
+    history_id: Optional[str] = None
 
 
 class CompareDocumentsRequest(BaseModel):
@@ -53,6 +60,12 @@ class CompareDocumentsRequest(BaseModel):
     left_document_id: str
     right_document_id: str
     answer_format: Literal["default", "resume", "etapes", "risques"] = "default"
+
+
+class SynthesizeDocumentsRequest(BaseModel):
+    question: str = Field(min_length=3)
+    document_ids: list[str] = Field(min_length=2)
+    answer_format: Literal["default", "resume", "etapes", "risques"] = "resume"
 
 
 class HistoryItem(BaseModel):
@@ -63,4 +76,18 @@ class HistoryItem(BaseModel):
     filters_json: dict
     latency_ms: int
     feedback_score: Optional[int] = None
+    feedback_note: Optional[str] = None
     created_at: datetime
+    updated_at: Optional[datetime] = None
+
+
+class FeedbackRequest(BaseModel):
+    feedback_score: Literal[1, -1]
+    feedback_note: Optional[str] = None
+
+
+class FeedbackResponse(BaseModel):
+    id: str
+    feedback_score: int
+    feedback_note: Optional[str] = None
+    updated_at: datetime

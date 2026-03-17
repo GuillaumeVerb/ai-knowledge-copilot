@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field
@@ -14,6 +14,11 @@ class DocumentCreate(BaseModel):
     status: str = "uploaded"
     source_type: str = "upload"
     workspace_id: Optional[str] = None
+    category: Optional[str] = None
+    document_date: Optional[date] = None
+    version_group_id: Optional[str] = None
+    version_number: int = 1
+    supersedes_document_id: Optional[str] = None
 
 
 class DocumentRead(BaseModel):
@@ -24,6 +29,12 @@ class DocumentRead(BaseModel):
     size_bytes: int
     source_type: str
     workspace_id: Optional[str] = None
+    category: Optional[str] = None
+    document_date: Optional[date] = None
+    version_group_id: Optional[str] = None
+    version_number: int = 1
+    supersedes_document_id: Optional[str] = None
+    is_latest_version: bool = True
     tags: list[str] = Field(default_factory=list)
     storage_path: str
     status: str

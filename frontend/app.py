@@ -16,24 +16,24 @@ st.markdown(
     <style>
         .stApp {
             background:
-                radial-gradient(circle at top left, rgba(244, 180, 0, 0.10), transparent 28%),
-                radial-gradient(circle at top right, rgba(9, 132, 227, 0.10), transparent 32%),
-                linear-gradient(180deg, #f8fafc 0%, #eef3f9 100%);
+                radial-gradient(circle at top left, rgba(244, 180, 0, 0.08), transparent 24%),
+                radial-gradient(circle at top right, rgba(56, 189, 248, 0.08), transparent 28%),
+                linear-gradient(180deg, #f8fafc 0%, #edf4fb 100%);
         }
         .hero {
-            padding: 1.4rem 1.5rem;
-            border-radius: 22px;
-            background: linear-gradient(135deg, #0f172a 0%, #1d4ed8 55%, #38bdf8 100%);
+            padding: 1.5rem 1.6rem;
+            border-radius: 26px;
+            background: linear-gradient(135deg, #0b1220 0%, #12358a 55%, #3aa4e8 100%);
             color: white;
-            box-shadow: 0 20px 50px rgba(15, 23, 42, 0.20);
+            box-shadow: 0 22px 60px rgba(15, 23, 42, 0.20);
             margin-bottom: 1rem;
         }
         .metric-card {
-            padding: 0.9rem 1rem;
+            padding: 1rem 1.05rem;
             border-radius: 18px;
-            background: rgba(255, 255, 255, 0.78);
+            background: rgba(255, 255, 255, 0.82);
             border: 1px solid rgba(15, 23, 42, 0.08);
-            backdrop-filter: blur(10px);
+            box-shadow: 0 12px 30px rgba(148, 163, 184, 0.12);
         }
         .source-card {
             padding: 0.9rem 1rem;
@@ -41,6 +41,31 @@ st.markdown(
             background: #f8fafc;
             border-left: 4px solid #0ea5e9;
             margin-bottom: 0.8rem;
+        }
+        .feature-card {
+            padding: 1rem 1.1rem;
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.86);
+            border: 1px solid rgba(148, 163, 184, 0.16);
+            box-shadow: 0 10px 25px rgba(148, 163, 184, 0.10);
+            min-height: 120px;
+        }
+        .result-shell {
+            padding: 1rem 1.1rem;
+            border-radius: 22px;
+            background: rgba(255, 255, 255, 0.88);
+            border: 1px solid rgba(148, 163, 184, 0.14);
+            box-shadow: 0 12px 36px rgba(148, 163, 184, 0.12);
+        }
+        .mini-badge {
+            display: inline-block;
+            padding: 0.25rem 0.55rem;
+            margin-right: 0.4rem;
+            border-radius: 999px;
+            background: #e2e8f0;
+            color: #0f172a;
+            font-size: 0.82rem;
+            font-weight: 600;
         }
     </style>
     """,
@@ -85,7 +110,6 @@ def render_section(section: dict[str, Any]) -> None:
     kind = section["kind"]
     content = section.get("content", "")
     items = section.get("items", [])
-
     with st.expander(title, expanded=kind in {"summary", "comparison"}):
         if content:
             if kind == "warning":
@@ -108,22 +132,31 @@ def render_result(response: dict[str, Any], *, comparison: bool = False) -> None
         st.warning(response["answer"])
         return
 
+    st.markdown('<div class="result-shell">', unsafe_allow_html=True)
+    badges = [
+        f'<span class="mini-badge">{response["status"]}</span>',
+        f'<span class="mini-badge">{response["used_context_count"]} source(s)</span>',
+        f'<span class="mini-badge">{response["latency_ms"]} ms</span>',
+    ]
+    if comparison:
+        badges.append('<span class="mini-badge">comparison</span>')
+    st.markdown("".join(badges), unsafe_allow_html=True)
+
     if response.get("sections"):
         first_section = response["sections"][0]
         summary_content = first_section.get("content") or "\n".join(first_section.get("items", []))
-        st.info(summary_content)
+        st.markdown(f"#### {first_section['title']}")
+        st.write(summary_content)
         for section in response["sections"][1:]:
             render_section(section)
     else:
         st.write(response["answer"])
 
-    st.caption(
-        f"Latency: {response['latency_ms']} ms | Sources shown: {response['used_context_count']} | Status: {response['status']}"
-    )
     if response.get("sources"):
         with st.expander("Sources", expanded=True):
             for source in response["sources"]:
                 render_source(source)
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 def render_history_item(item: dict[str, Any]) -> None:
@@ -133,6 +166,23 @@ def render_history_item(item: dict[str, Any]) -> None:
         st.caption(f"Latency: {item['latency_ms']} ms")
 
 
+def render_feature_card(title: str, body: str) -> None:
+    st.markdown(
+        f"""
+        <div class="feature-card">
+            <strong>{title}</strong>
+            <div style="margin-top:0.45rem;">{body}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+if "question_input" not in st.session_state:
+    st.session_state["question_input"] = ""
+
+health: dict[str, Any] = {}
+api_online = False
 try:
     health = api_get("/health")
     api_online = health.get("status") == "ok"
@@ -149,30 +199,50 @@ st.markdown(
     """
     <div class="hero">
         <h1 style="margin:0 0 0.35rem 0;">AI Knowledge Copilot</h1>
-        <p style="margin:0; font-size:1.02rem; max-width:800px;">
-            Portfolio-ready knowledge assistant for internal documents with grounded answers, structured summaries,
-            useful comparisons, and source-backed outputs.
+        <p style="margin:0; font-size:1.02rem; max-width:860px;">
+            Source-grounded search and synthesis for internal documentation, built to demonstrate retrieval quality,
+            structured answers, and practical knowledge workflows.
         </p>
     </div>
     """,
     unsafe_allow_html=True,
 )
 
+feature_cols = st.columns(3)
+with feature_cols[0]:
+    render_feature_card("Grounded answers", "Questions return concise answers with only the relevant supporting sources.")
+with feature_cols[1]:
+    render_feature_card("Structured summaries", "Document summaries are split into overview and key points for easier review.")
+with feature_cols[2]:
+    render_feature_card("Document comparison", "Compare procedures side by side with similarities, differences, and operational implications.")
+
 with st.sidebar:
     st.subheader("Workspace")
+    action_cols = st.columns(2)
+    if action_cols[0].button("Refresh", use_container_width=True):
+        st.rerun()
+
+    if api_online:
+        if action_cols[1].button("Reindex", use_container_width=True):
+            api_post("/reindex")
+            st.success("Index rebuilt.")
+            st.rerun()
+    else:
+        action_cols[1].button("Reindex", disabled=True, use_container_width=True)
+
     if api_online:
         st.success("Backend connected")
         llm_mode = health.get("llm_mode", "unknown")
         retrieval_mode = health.get("retrieval_mode", "unknown")
-        if llm_mode == "openai":
-            st.info("Mode: OpenAI production-grade")
-        else:
-            st.warning("Mode: local fallback")
-            st.caption("OpenAI key recommended for best demo quality.")
+        mode_label = "OpenAI production-grade" if llm_mode == "openai" else "Local fallback"
+        st.caption(f"LLM mode: {mode_label}")
         st.caption(f"Retrieval: {retrieval_mode}")
+        if llm_mode != "openai":
+            st.info("Set `OPENAI_API_KEY` for the best demo quality.")
     else:
         st.error("Backend unavailable")
-        st.caption("Expected API base URL: " + API_BASE_URL)
+        st.caption("API base URL: " + API_BASE_URL)
+        st.caption("Use `Refresh` after the backend finishes starting.")
 
     st.markdown("### Quick stats")
     st.metric("Documents", len(documents))
@@ -184,11 +254,11 @@ with st.sidebar:
         st.success(f"Seeded {result['seeded']} docs, skipped {result['skipped']}.")
         st.rerun()
 
-    st.markdown("### Try these questions")
-    st.caption("RH: What is the remote work policy?")
-    st.caption("Support: How should a severity one incident be escalated?")
-    st.caption("Security: What are the key rules for handling sensitive data?")
-    st.caption("Ops: Compare incident escalation procedures")
+    st.markdown("### Demo scenarios")
+    st.caption("HR policy lookup")
+    st.caption("Incident escalation workflow")
+    st.caption("Security policy guidance")
+    st.caption("Procedure comparison")
 
 metric_col1, metric_col2, metric_col3 = st.columns(3)
 metric_col1.markdown(
@@ -222,9 +292,10 @@ with tab_documents:
         st.rerun()
 
     st.subheader("Library")
-    filter_tag = st.text_input("Filter by tag", key="filter_tag")
-    filter_status = st.selectbox("Status", options=["", "indexed", "processing", "failed"])
-    search_query = st.text_input("Search document name")
+    filter_bar = st.columns([2, 1, 2])
+    filter_tag = filter_bar[0].text_input("Filter by tag", key="filter_tag")
+    filter_status = filter_bar[1].selectbox("Status", options=["", "indexed", "processing", "failed"])
+    search_query = filter_bar[2].text_input("Search document name")
     filtered_documents = (
         api_get("/documents", tag=filter_tag or None, status=filter_status or None, search=search_query or None)
         if api_online
@@ -234,10 +305,10 @@ with tab_documents:
         st.info("No documents imported yet.")
     for document in filtered_documents:
         with st.container(border=True):
-            col1, col2, col3 = st.columns([5, 2, 2])
+            col1, col2, col3 = st.columns([5, 1.5, 1.5])
             col1.markdown(f"**{document['original_filename']}**")
             col1.caption(f"Status: {document['status']} | Tags: {', '.join(document['tags']) or 'none'}")
-            if col2.button("Summarize", key=f"summary_{document['id']}", use_container_width=True):
+            if col2.button("Summary", key=f"summary_{document['id']}", use_container_width=True):
                 summary = api_post(f"/documents/{document['id']}/summary")
                 render_result(
                     {
@@ -259,23 +330,21 @@ with tab_chat:
     selected_tags = st.text_input("Limit to tags", placeholder="policy, support")
     answer_format = st.selectbox("Response format", options=["default", "resume", "etapes", "risques", "faq"])
 
-    if "question_input" not in st.session_state:
-        st.session_state["question_input"] = ""
-
-    quick_question_cols = st.columns(4)
-    if quick_question_cols[0].button("Remote work", use_container_width=True):
+    scenario_cols = st.columns(4)
+    if scenario_cols[0].button("Remote work", use_container_width=True):
         st.session_state["question_input"] = "What is the remote work policy?"
-    if quick_question_cols[1].button("Escalation", use_container_width=True):
+    if scenario_cols[1].button("Escalation", use_container_width=True):
         st.session_state["question_input"] = "How should a severity one incident be escalated?"
-    if quick_question_cols[2].button("Security", use_container_width=True):
+    if scenario_cols[2].button("Security", use_container_width=True):
         st.session_state["question_input"] = "What are the key rules for handling sensitive data?"
-    if quick_question_cols[3].button("Onboarding", use_container_width=True):
+    if scenario_cols[3].button("Onboarding", use_container_width=True):
         st.session_state["question_input"] = "What should new hires receive during onboarding?"
 
     question = st.text_area(
         "Question",
         key="question_input",
         placeholder="What is the onboarding policy for remote employees?",
+        height=120,
     )
 
     if st.button("Ask", use_container_width=True, disabled=not question.strip() or not api_online):
@@ -293,8 +362,9 @@ with tab_chat:
         render_result(response)
 
     st.subheader("Compare two documents")
-    left_document = st.selectbox("Left document", options=[""] + list(document_options.keys()), key="left_doc")
-    right_document = st.selectbox("Right document", options=[""] + list(document_options.keys()), key="right_doc")
+    compare_cols = st.columns(2)
+    left_document = compare_cols[0].selectbox("Left document", options=[""] + list(document_options.keys()), key="left_doc")
+    right_document = compare_cols[1].selectbox("Right document", options=[""] + list(document_options.keys()), key="right_doc")
     compare_question = st.text_input("Comparison angle", placeholder="Compare incident escalation procedures")
     if st.button(
         "Compare",

@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 import mimetypes
 from pathlib import Path
+from datetime import date
 from typing import Any, Optional
 from uuid import uuid4
 
@@ -59,6 +60,12 @@ class DocumentIngestionService:
         mime_type: str,
         content: bytes,
         tags: Optional[list[str]] = None,
+        category: Optional[str] = None,
+        document_date: Optional[date] = None,
+        version_group_id: Optional[str] = None,
+        version_number: int = 1,
+        supersedes_document_id: Optional[str] = None,
+        source_type: str = "upload",
     ) -> DocumentUploadResponse:
         tags = tags or []
         storage_path = self.storage.save(filename, content)
@@ -71,6 +78,12 @@ class DocumentIngestionService:
                 storage_path=str(storage_path),
                 tags=tags,
                 status="processing",
+                category=category,
+                document_date=document_date,
+                version_group_id=version_group_id,
+                version_number=version_number,
+                supersedes_document_id=supersedes_document_id,
+                source_type=source_type,
             )
         )
         try:
@@ -92,6 +105,9 @@ class DocumentIngestionService:
                             "page_number": chunk.page_number,
                             "section_title": chunk.section_title,
                             "tags": document.tags,
+                            "category": document.category,
+                            "document_date": document.document_date.isoformat() if document.document_date else None,
+                            "version_number": document.version_number,
                         },
                     }
                 )
@@ -127,11 +143,41 @@ class DocumentIngestionService:
                         "page_number": chunk.page_number,
                         "section_title": chunk.section_title,
                         "tags": document.tags,
+                        "category": document.category,
+                        "document_date": document.document_date.isoformat() if document.document_date else None,
+                        "version_number": document.version_number,
                     },
                 }
             )
         self.vector_store.recreate(vectors)
         return len(vectors)
+
+    def reimport_document(
+        self,
+        document_id: str,
+        *,
+        filename: str,
+        mime_type: str,
+        content: bytes,
+        tags: Optional[list[str]] = None,
+        category: Optional[str] = None,
+        document_date: Optional[date] = None,
+    ) -> DocumentUploadResponse:
+        previous = self.documents_repo.get_document(document_id)
+        version_group_id = previous.version_group_id or previous.id
+        next_version_number = self.documents_repo.get_next_version_number(version_group_id)
+        return self.ingest_upload(
+            filename=filename,
+            mime_type=mime_type,
+            content=content,
+            tags=tags if tags is not None else previous.tags,
+            category=category if category is not None else previous.category,
+            document_date=document_date if document_date is not None else previous.document_date,
+            version_group_id=version_group_id,
+            version_number=next_version_number,
+            supersedes_document_id=previous.id,
+            source_type="reimport",
+        )
 
     def seed_demo_documents(self, demo_dir: Path) -> dict[str, int]:
         existing_names = {document.original_filename for document in self.documents_repo.list_documents()}

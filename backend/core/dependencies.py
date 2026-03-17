@@ -91,6 +91,7 @@ def get_retrieval_service() -> RetrievalService:
     settings = get_settings()
     return RetrievalService(
         vector_store=get_vector_store(),
+        documents_repository=get_documents_repository(),
         reranker=KeywordOverlapReranker(),
         default_top_k=settings.retrieval_top_k,
         fetch_k=settings.retrieval_fetch_k,

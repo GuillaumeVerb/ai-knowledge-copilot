@@ -24,6 +24,7 @@ class QueryHistoryRepository:
         filters_json: dict,
         latency_ms: int,
         feedback_score: Optional[int] = None,
+        feedback_note: Optional[str] = None,
     ) -> HistoryItem:
         entry_id = str(uuid4())
         created_at = _now()
@@ -31,8 +32,8 @@ class QueryHistoryRepository:
             """
             INSERT INTO query_history (
                 id, question, answer, sources_json, filters_json,
-                latency_ms, feedback_score, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                latency_ms, feedback_score, feedback_note, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 entry_id,
@@ -42,6 +43,8 @@ class QueryHistoryRepository:
                 json.dumps(filters_json),
                 latency_ms,
                 feedback_score,
+                feedback_note,
+                created_at,
                 created_at,
             ),
         )
@@ -64,6 +67,26 @@ class QueryHistoryRepository:
             raise KeyError(f"History entry {entry_id} not found")
         return self._row_to_history_item(row)
 
+    def update_feedback(
+        self,
+        entry_id: str,
+        *,
+        feedback_score: int,
+        feedback_note: Optional[str] = None,
+    ) -> HistoryItem:
+        self.get_entry(entry_id)
+        updated_at = _now()
+        self.connection.execute(
+            """
+            UPDATE query_history
+            SET feedback_score = ?, feedback_note = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (feedback_score, feedback_note, updated_at, entry_id),
+        )
+        self.connection.commit()
+        return self.get_entry(entry_id)
+
     def _row_to_history_item(self, row: sqlite3.Row) -> HistoryItem:
         return HistoryItem(
             id=row["id"],
@@ -73,5 +96,7 @@ class QueryHistoryRepository:
             filters_json=json.loads(row["filters_json"] or "{}"),
             latency_ms=row["latency_ms"],
             feedback_score=row["feedback_score"],
+            feedback_note=row["feedback_note"] if "feedback_note" in row.keys() else None,
             created_at=datetime.fromisoformat(row["created_at"]),
+            updated_at=datetime.fromisoformat(row["updated_at"]) if row["updated_at"] else None,
         )
