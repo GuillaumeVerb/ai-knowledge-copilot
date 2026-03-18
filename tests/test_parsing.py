@@ -30,3 +30,11 @@ def test_parse_pdf(tmp_path: Path):
         writer.write(file_handle)
     pages = DocumentParser().parse(path)
     assert isinstance(pages, list)
+
+
+def test_parse_csv(tmp_path: Path):
+    path = tmp_path / "sample.csv"
+    path.write_text("team,policy\nsupport,Escalate severity one incidents immediately\nhr,Remote work is available two days per week\n", encoding="utf-8")
+    pages = DocumentParser().parse(path)
+    assert "team: support" in pages[0].text
+    assert "policy: Remote work is available two days per week" in pages[0].text

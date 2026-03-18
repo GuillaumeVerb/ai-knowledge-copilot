@@ -31,6 +31,8 @@ def test_upload_query_summary_and_delete(temp_env):
     assert query_response.json()["sections"]
     assert query_response.json()["confidence_label"] in {"high", "medium", "low"}
     assert "confidence_reason" in query_response.json()
+    assert "evidence_summary" in query_response.json()
+    assert "evidence_documents" in query_response.json()
     assert query_response.json()["history_id"]
 
     summary_response = client.post(f"/documents/{document_id}/summary")
@@ -44,6 +46,7 @@ def test_upload_query_summary_and_delete(temp_env):
     health_response = client.get("/health")
     assert health_response.status_code == 200
     assert "llm_mode" in health_response.json()
+    assert ".csv" in health_response.json()["supported_file_types"]
 
     delete_response = client.delete(f"/documents/{document_id}")
     assert delete_response.status_code == 200

@@ -52,6 +52,9 @@ class QueryResponse(BaseModel):
     confidence_label: Literal["high", "medium", "low"] = "low"
     confidence_score: float = 0.0
     confidence_reason: str = ""
+    evidence_documents: list[str] = Field(default_factory=list)
+    evidence_summary: str = ""
+    caution: str = ""
     history_id: Optional[str] = None
 
 

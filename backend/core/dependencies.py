@@ -119,4 +119,5 @@ def get_runtime_info() -> dict[str, str]:
         "llm_mode": llm_mode,
         "retrieval_mode": retrieval_mode,
         "recommended_mode": "openai",
+        "supported_file_types": sorted(DocumentParser.SUPPORTED_EXTENSIONS),
     }

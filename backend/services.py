@@ -100,6 +100,9 @@ class QueryService:
                 confidence_label="low",
                 confidence_score=0.0,
                 confidence_reason="No sufficiently relevant evidence found in the indexed documents.",
+                evidence_documents=[],
+                evidence_summary="0 source excerpts across 0 documents.",
+                caution="The assistant did not find enough grounded evidence to answer safely.",
                 history_id=history_entry.id,
             )
         prompt = build_query_prompt(request.question, sources, request.answer_format)
@@ -137,6 +140,9 @@ class QueryService:
             confidence_label=confidence_label,
             confidence_score=confidence_score,
             confidence_reason=confidence_reason,
+            evidence_documents=self._evidence_documents(display_sources),
+            evidence_summary=self._build_evidence_summary(display_sources),
+            caution=self._build_caution(confidence_label, display_sources),
             history_id=history_entry.id,
         )
 
@@ -168,6 +174,8 @@ class QueryService:
             sources=display_sources,
             latency_ms=latency_ms,
             sections=self._build_summary_sections(raw_summary, display_sources),
+            evidence_documents=self._evidence_documents(display_sources),
+            evidence_summary=self._build_evidence_summary(display_sources),
         )
 
     def compare_documents(self, request: CompareDocumentsRequest) -> QueryResponse:
@@ -237,6 +245,9 @@ class QueryService:
             confidence_label=confidence_label,
             confidence_score=confidence_score,
             confidence_reason=confidence_reason,
+            evidence_documents=self._evidence_documents(display_sources),
+            evidence_summary=self._build_evidence_summary(display_sources),
+            caution=self._build_caution(confidence_label, display_sources, comparison_mode=True),
             history_id=history_entry.id,
         )
 
@@ -285,6 +296,9 @@ class QueryService:
                 confidence_label="low",
                 confidence_score=0.0,
                 confidence_reason="The selected documents do not contain enough relevant overlap for a grounded synthesis.",
+                evidence_documents=[],
+                evidence_summary="0 source excerpts across 0 documents.",
+                caution="The selected documents do not provide enough overlapping evidence for a reliable synthesis.",
                 history_id=history_entry.id,
             )
 
@@ -317,6 +331,9 @@ class QueryService:
             confidence_label=confidence_label,
             confidence_score=confidence_score,
             confidence_reason=confidence_reason,
+            evidence_documents=self._evidence_documents(display_sources),
+            evidence_summary=self._build_evidence_summary(display_sources),
+            caution=self._build_caution(confidence_label, display_sources, synthesis_mode=True),
             history_id=history_entry.id,
         )
 
@@ -478,6 +495,33 @@ class QueryService:
         if confidence_score >= 0.45:
             return confidence_score, "medium", f"Answer supported by {len(sources)} useful source(s), but evidence is less concentrated."
         return confidence_score, "low", f"Evidence is weak or dispersed across {len(sources)} source(s)."
+
+    def _evidence_documents(self, sources: list[SourceSnippet]) -> list[str]:
+        return list(dict.fromkeys(source.document_name for source in sources))
+
+    def _build_evidence_summary(self, sources: list[SourceSnippet]) -> str:
+        document_count = len(self._evidence_documents(sources))
+        return f"{len(sources)} source excerpt(s) across {document_count} document(s)."
+
+    def _build_caution(
+        self,
+        confidence_label: str,
+        sources: list[SourceSnippet],
+        *,
+        comparison_mode: bool = False,
+        synthesis_mode: bool = False,
+    ) -> str:
+        if not sources:
+            return "No grounded evidence was returned."
+        if confidence_label == "high":
+            return ""
+        if synthesis_mode:
+            return "Treat this synthesis as directional. Review the cited evidence before turning it into guidance."
+        if comparison_mode:
+            return "This comparison blends evidence from multiple documents. Check the source excerpts before aligning teams on differences."
+        if confidence_label == "medium":
+            return "Evidence is useful but not fully concentrated. Validate the cited excerpts before acting on the answer."
+        return "Evidence is limited or dispersed. Use the cited excerpts to confirm the answer before relying on it."
 
     def _build_summary_sections(
         self,

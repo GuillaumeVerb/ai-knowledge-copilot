@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" fill="none">
+  <rect width="1200" height="720" rx="30" fill="#F8FBFD"/>
+  <rect x="34" y="34" width="1132" height="652" rx="26" fill="#FFFFFF" stroke="#D8E2EC"/>
+  <rect x="70" y="70" width="260" height="580" rx="22" fill="#F1F7FC"/>
+  <text x="96" y="118" fill="#0F172A" font-size="28" font-family="Arial, sans-serif" font-weight="700">Control room</text>
+  <text x="96" y="164" fill="#334155" font-size="18" font-family="Arial, sans-serif">OpenAI or fallback</text>
+  <text x="96" y="198" fill="#334155" font-size="18" font-family="Arial, sans-serif">PDF, DOCX, TXT, MD, CSV</text>
+  <text x="96" y="232" fill="#334155" font-size="18" font-family="Arial, sans-serif">Seed data and reindex</text>
+  <rect x="366" y="70" width="764" height="160" rx="24" fill="#0F172A"/>
+  <text x="402" y="128" fill="#FFFFFF" font-size="36" font-family="Arial, sans-serif" font-weight="700">Grounded answer workflow</text>
+  <text x="402" y="172" fill="#BFDBFE" font-size="22" font-family="Arial, sans-serif">Question, confidence, caution, and evidence perimeter in one panel.</text>
+  <rect x="366" y="264" width="360" height="356" rx="22" fill="#F8FBFF" stroke="#D8E2EC"/>
+  <text x="394" y="308" fill="#0F172A" font-size="26" font-family="Arial, sans-serif" font-weight="700">Ask a question</text>
+  <text x="394" y="356" fill="#334155" font-size="20" font-family="Arial, sans-serif">What is the remote work policy?</text>
+  <rect x="394" y="390" width="304" height="54" rx="16" fill="#E0F2FE"/>
+  <text x="420" y="424" fill="#075985" font-size="20" font-family="Arial, sans-serif">Generate grounded answer</text>
+  <text x="394" y="484" fill="#334155" font-size="18" font-family="Arial, sans-serif">Tags: demo, policy</text>
+  <text x="394" y="516" fill="#334155" font-size="18" font-family="Arial, sans-serif">Format: default</text>
+  <text x="394" y="548" fill="#334155" font-size="18" font-family="Arial, sans-serif">Scope: all documents</text>
+  <rect x="754" y="264" width="376" height="356" rx="22" fill="#FFFFFF" stroke="#38BDF8"/>
+  <text x="784" y="308" fill="#0F172A" font-size="26" font-family="Arial, sans-serif" font-weight="700">Evidence panel</text>
+  <text x="784" y="352" fill="#166534" font-size="18" font-family="Arial, sans-serif">High confidence • 2 sources • 142 ms</text>
+  <text x="784" y="392" fill="#0F172A" font-size="22" font-family="Arial, sans-serif">Remote work is available up to two days per week after onboarding.</text>
+  <text x="784" y="444" fill="#334155" font-size="18" font-family="Arial, sans-serif">Evidence perimeter: 2 source excerpts across 1 document.</text>
+  <text x="784" y="476" fill="#334155" font-size="18" font-family="Arial, sans-serif">Confidence reason: concentrated support from the handbook.</text>
+  <rect x="784" y="512" width="316" height="78" rx="16" fill="#EFF6FF"/>
+  <text x="806" y="546" fill="#1E3A8A" font-size="18" font-family="Arial, sans-serif">Source excerpt</text>
+  <text x="806" y="574" fill="#334155" font-size="16" font-family="Arial, sans-serif">Managers must approve recurring remote schedules.</text>
+</svg>

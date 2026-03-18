@@ -1,161 +1,98 @@
 # Architecture
 
-## Overview
+AI Knowledge Copilot is intentionally small enough to understand quickly, but structured enough to discuss as a real product architecture in an interview.
 
-The project is split into a backend API, retrieval/indexing pipeline, persistence layer, and two frontends.
+![Architecture overview](assets/architecture-overview.svg)
 
-Primary components:
+## System Shape
 
-- `backend/`
-- `frontend-react/`
-- `frontend/`
-- `scripts/`
-- `data/demo_docs/`
+The system is split into five main areas:
 
-## Backend Structure
-
-### API layer
-
-FastAPI routes live in `backend/api/`.
-
-Key route groups:
-
-- `health`
-- `documents`
-- `query`
-- `summaries`
-- `history`
-- `admin`
-
-### Domain logic
-
-The main orchestration lives in `backend/services.py`.
-
-This is where the app currently handles:
-
-- question answering
-- source narrowing
-- comparison
-- synthesis
-- confidence calculation
-- summary generation
-
-### Ingestion
-
-Document ingestion lives in `backend/ingestion/`.
-
-Pipeline:
-
-1. upload file
-2. parse document
-3. clean text
-4. chunk text
-5. persist chunks
-6. embed/index vectors
-
-### Retrieval
-
-Retrieval lives in `backend/retrieval/`.
-
-Current behavior:
-
-- vector retrieval
-- lexical retrieval over stored chunks
-- hybrid score merge
-- optional reranking
-
-### LLM layer
-
-The LLM abstraction lives in `backend/llm/`.
-
-Modes:
-
-- OpenAI Responses API
-- local fallback provider
-
-## Persistence
-
-SQLite currently stores:
-
-- documents
-- chunks
-- query history
-- feedback metadata
-
-Document metadata now includes:
-
-- tags
-- category
-- document date
-- version group
-- version number
-- superseded document link
+- `backend/api/` for HTTP routes
+- `backend/ingestion/` for parsing, cleaning, chunking, and indexing
+- `backend/retrieval/` for vector retrieval, lexical fallback, and reranking
+- `backend/services.py` for orchestration, confidence, and workflow logic
+- `frontend-react/` for the recruiter-facing demo UI
 
 ## Request Flow
 
 ### Ask flow
 
-1. `/query` receives question and filters
-2. retrieval returns candidates
-3. query service narrows context
-4. LLM provider generates answer
-5. source list is filtered
-6. confidence is computed
-7. query history entry is saved
+1. `/query` receives the question and optional retrieval filters.
+2. Retrieval returns a candidate set from Qdrant or the in-memory fallback.
+3. `QueryService` narrows the evidence set before generation.
+4. The LLM provider generates the answer.
+5. Display sources are filtered again to keep the UI focused.
+6. Confidence, evidence summary, caution message, and history are recorded.
+
+### Summary flow
+
+1. `/documents/{id}/summary` loads the document chunks.
+2. The service builds a summary prompt from bounded document context.
+3. The response is returned with sections and source excerpts.
 
 ### Compare flow
 
-1. `/query/compare` receives two document ids
-2. retrieval is constrained by each document
-3. the service builds a comparison output
-4. confidence and history are stored
+1. `/query/compare` constrains retrieval to each chosen document.
+2. The service builds a comparison-oriented prompt.
+3. The frontend receives structured sections and supporting excerpts.
 
 ### Synthesis flow
 
-1. `/query/synthesize` receives multiple document ids
-2. retrieval is constrained to those documents
-3. the service builds a cross-document response
-4. relevant sources are returned
+1. `/query/synthesize` constrains retrieval to the selected document set.
+2. The service narrows to the most relevant cross-document evidence.
+3. The output highlights documents synthesized, cross-document insights, and source highlights.
 
-### Versioning flow
+## Ingestion Pipeline
 
-1. `/documents/{id}/reimport` receives a new file
-2. the previous document is loaded
-3. the next version number is computed
-4. a new document record is created
-5. the new record points back to the previous one
+The ingestion pipeline currently handles `PDF`, `DOCX`, `TXT`, `MD`, and `CSV`.
 
-## Frontends
+Flow:
 
-### React
+1. save uploaded file to local storage
+2. parse file into normalized pages
+3. clean the extracted text
+4. chunk the text for retrieval
+5. persist document and chunk records in SQLite
+6. upsert vectors into Qdrant or the in-memory vector store
 
-`frontend-react/` is the recommended portfolio frontend.
+## Confidence And Evidence
 
-It currently exposes:
+The product is intentionally opinionated about explainability:
 
-- ask
-- compare
-- summarize
-- synthesize
-- upload
-- reimport
-- metadata filters
-- confidence
+- every query response includes a confidence label and score
+- the API now exposes `evidence_documents`, `evidence_summary`, and `caution`
+- the React UI surfaces the answer, confidence reason, caution, and supporting excerpts in one place
+
+This keeps the demo honest when evidence is thin or spread across multiple sources.
+
+## Runtime Modes
+
+### OpenAI + Qdrant
+
+Best for live demos because it approximates a more production-grade path.
+
+### Local fallback
+
+Useful for tests, local validation, and environments without external services. The fallback path remains deliberate rather than hidden so the repo can still be exercised end to end.
+
+## Persistence
+
+SQLite stores:
+
+- documents
+- chunks
+- query history
 - feedback
+- document metadata such as tags, category, date, versioning fields
 
-### Streamlit
+## Frontend Positioning
 
-`frontend/` remains as a quick demo/dev frontend.
+The React frontend is the primary portfolio surface. It emphasizes:
 
-It is useful for local validation but is no longer the strongest presentation surface.
+- fast scenario loading
+- visible proof around each answer
+- document management and versioning
+- history and feedback traceability
 
-## Extension Points
-
-The codebase is already shaped to support future additions such as:
-
-- auth
-- workspaces
-- permissions
-- external connectors
-- analytics
-- more advanced reranking
+The Streamlit frontend remains available as a lighter secondary surface for dev and fallback use.

@@ -6,5 +6,5 @@ router = APIRouter(tags=["health"])
 
 
 @router.get("/health")
-def healthcheck() -> dict[str, str]:
+def healthcheck() -> dict[str, object]:
     return {"status": "ok", **get_runtime_info()}

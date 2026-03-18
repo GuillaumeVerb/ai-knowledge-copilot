@@ -1,24 +1,28 @@
 # Demo Guide
 
+This guide is tuned for recruiter demos and short architecture walkthroughs.
+
 ## Goal
 
-This guide is for presenting the app as a portfolio project or client-facing prototype.
+Present the product in less than 5 minutes while proving:
 
-Use the React frontend when possible.
+- the UI is polished enough to feel like a product
+- the backend is grounded and structured, not generic chat
+- the system exposes confidence and evidence honestly
 
 ## Recommended Setup
 
-### Best quality
+Best mode:
 
-- backend with `OPENAI_API_KEY`
-- Qdrant available
 - React frontend
+- backend in `OpenAI + Qdrant` mode if credentials are available
 
-### Local fallback
+Fallback mode:
 
-- backend without OpenAI
-- in-memory retrieval fallback
-- still usable for development and testing
+- React frontend
+- backend in local fallback mode
+
+The fallback path is acceptable for interviews, but say explicitly that OpenAI mode is the best quality path.
 
 ## Launch
 
@@ -33,28 +37,26 @@ PYTHONPATH=. .venv/bin/uvicorn backend.main:app --reload --host 127.0.0.1 --port
 ```bash
 cd frontend-react
 npm install
-npm run dev
+npm run dev -- --host 127.0.0.1 --port 5173
 ```
 
 ### Seed data
-
-Use the UI button or:
 
 ```bash
 curl -X POST http://127.0.0.1:8010/demo/seed
 ```
 
-## Demo Sequence
+## 5-Minute Script
 
-### 1. Show the document library
+### 1. Open the dashboard
 
 What to point out:
 
-- multiple documents are already indexed
-- tags, categories, dates, and versions are visible
-- filters can narrow the working set
+- runtime mode is visible
+- supported file types are visible
+- the app is clearly framed as grounded internal knowledge, not generic chat
 
-### 2. Ask a grounded question
+### 2. Run the grounded question scenario
 
 Suggested question:
 
@@ -63,74 +65,60 @@ Suggested question:
 What to point out:
 
 - concise answer
-- confidence label
-- source evidence
-- history capture
+- confidence label and score
+- caution messaging when evidence is not perfect
+- explicit evidence perimeter and source excerpts
 
-### 3. Summarize a document
-
-Good candidates:
-
-- HR handbook
-- security policy
-
-What to point out:
-
-- single-document scope
-- structured sections
-- limited supporting sources
-
-### 4. Compare two documents
+### 3. Show comparison
 
 Suggested pair:
 
 - `product_guide.md`
 - `support_procedure.txt`
 
-Suggested prompt:
+Suggested question:
 
 `Compare incident escalation procedures`
 
 What to point out:
 
-- similarities
-- differences
-- operational implications
+- structured sections
+- differences are easy to scan
+- the system stays grounded in actual excerpts
 
-### 5. Synthesize across documents
+### 4. Show synthesis
 
-Select 2 to 3 documents and ask:
+Suggested prompt:
 
 `Summarize the main operational guidance across these documents`
 
 What to point out:
 
-- multi-document reasoning
-- cross-document highlights
-- grounded source excerpts
+- cross-document reasoning
+- bounded document scope
+- source highlights remain visible
 
-### 6. Show versioning
-
-Reimport a document as a new version.
+### 5. Show versioning and traceability
 
 What to point out:
 
-- incremented version number
-- latest vs superseded view
-- filtered list behavior
+- upload or reimport as a new version
+- show latest vs superseded behavior
+- open recent history and feedback capture
 
-### 7. Show the feedback loop
+## Reference Questions
 
-Use `Helpful` or `Not helpful`.
+These are good default questions for live use:
 
-What to point out:
+- `What is the remote work policy?`
+- `How should a severity one incident be escalated?`
+- `What are the key rules for handling sensitive data?`
+- `What should new hires receive during onboarding?`
 
-- answer quality is instrumented
-- the product can later learn from poor responses
-
-## Talking Points
+## Demo Talking Points
 
 - This is not just chat over files.
-- The product supports retrieval controls, source narrowing, confidence, and operational workflows.
-- The backend logic is separated from the frontend.
-- The app is designed to grow toward SaaS features later.
+- Retrieval is narrowed before generation.
+- Evidence and caution are visible in the product, not hidden in logs.
+- The architecture separates ingestion, retrieval, orchestration, and presentation.
+- The current scope is intentionally product-shaped, while still small enough to reason about quickly.

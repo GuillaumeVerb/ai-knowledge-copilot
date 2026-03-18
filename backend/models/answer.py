@@ -9,3 +9,5 @@ class DocumentSummaryResponse(BaseModel):
     sources: list[SourceSnippet]
     latency_ms: int
     sections: list[StructuredBlock] = Field(default_factory=list)
+    evidence_documents: list[str] = Field(default_factory=list)
+    evidence_summary: str = ""

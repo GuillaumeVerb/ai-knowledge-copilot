@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -20,7 +21,7 @@ class UnsupportedFileTypeError(ValueError):
 
 
 class DocumentParser:
-    SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".txt", ".md"}
+    SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".txt", ".md", ".csv"}
 
     def parse(self, path: Path) -> list[ParsedPage]:
         suffix = path.suffix.lower()
@@ -30,6 +31,8 @@ class DocumentParser:
             return self._parse_pdf(path)
         if suffix == ".docx":
             return self._parse_docx(path)
+        if suffix == ".csv":
+            return self._parse_csv(path)
         return self._parse_text(path)
 
     def _parse_pdf(self, path: Path) -> list[ParsedPage]:
@@ -49,3 +52,26 @@ class DocumentParser:
     def _parse_text(self, path: Path) -> list[ParsedPage]:
         text = path.read_text(encoding="utf-8")
         return [ParsedPage(text=text, page_number=1)]
+
+    def _parse_csv(self, path: Path) -> list[ParsedPage]:
+        with path.open(newline="", encoding="utf-8") as file_handle:
+            reader = csv.reader(file_handle)
+            rows = list(reader)
+
+        if not rows:
+            return [ParsedPage(text="", page_number=1)]
+
+        header = rows[0]
+        lines: list[str] = []
+        for index, row in enumerate(rows[1:], start=1):
+            pairs = []
+            for position, value in enumerate(row):
+                label = header[position] if position < len(header) and header[position] else f"column_{position + 1}"
+                if value.strip():
+                    pairs.append(f"{label}: {value.strip()}")
+            if pairs:
+                lines.append(f"Row {index}: " + " | ".join(pairs))
+
+        if not lines:
+            lines = [" | ".join(cell.strip() for cell in header if cell.strip())]
+        return [ParsedPage(text="\n".join(lines), page_number=1)]

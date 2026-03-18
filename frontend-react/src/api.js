@@ -4,7 +4,11 @@ async function request(path, options = {}) {
   const response = await fetch(`${API_BASE_URL}${path}`, options);
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(text || `Request failed: ${response.status}`);
+    let payload = null;
+    try {
+      payload = JSON.parse(text);
+    } catch {}
+    throw new Error(payload?.detail || text || `Request failed: ${response.status}`);
   }
   return response.json();
 }
