@@ -29,10 +29,10 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-4.1-mini"
     embedding_model: str = "text-embedding-3-small"
 
-    chunk_size: int = 900
-    chunk_overlap: int = 150
-    retrieval_top_k: int = 6
-    retrieval_fetch_k: int = 12
+    chunk_size: int = 500
+    chunk_overlap: int = 100
+    retrieval_top_k: int = 5
+    retrieval_fetch_k: int = 10
     max_summary_chunks: int = 12
     enable_reranking: bool = True
     allow_stub_llm: bool = True

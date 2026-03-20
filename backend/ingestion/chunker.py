@@ -1,10 +1,13 @@
+import re
 from collections.abc import Iterable
 
 from backend.ingestion.parser import ParsedPage
 
 
 class TextChunker:
-    def __init__(self, chunk_size: int = 900, overlap: int = 150):
+    TOKEN_PATTERN = re.compile(r"\S+")
+
+    def __init__(self, chunk_size: int = 500, overlap: int = 100):
         if overlap >= chunk_size:
             raise ValueError("overlap must be smaller than chunk_size")
         self.chunk_size = chunk_size
@@ -17,10 +20,15 @@ class TextChunker:
             text = page.text.strip()
             if not text:
                 continue
-            start = 0
-            while start < len(text):
-                end = min(start + self.chunk_size, len(text))
-                slice_text = text[start:end].strip()
+            spans = self._token_spans(text)
+            if not spans:
+                continue
+            start_token = 0
+            while start_token < len(spans):
+                end_token = min(start_token + self.chunk_size, len(spans))
+                char_start = spans[start_token][0]
+                char_end = spans[end_token - 1][1]
+                slice_text = text[char_start:char_end].strip()
                 if slice_text:
                     chunks.append(
                         {
@@ -32,13 +40,27 @@ class TextChunker:
                                 "document_id": document_id,
                                 "page_number": page.page_number,
                                 "section_title": page.section_title,
-                                "char_start": start,
-                                "char_end": end,
+                                "char_start": char_start,
+                                "char_end": char_end,
+                                "token_start": start_token,
+                                "token_end": end_token,
                             },
                         }
                     )
                     chunk_index += 1
-                if end >= len(text):
+                if end_token >= len(spans):
                     break
-                start = end - self.overlap
+                start_token = max(0, end_token - self.overlap)
         return chunks
+
+    def _token_spans(self, text: str) -> list[tuple[int, int]]:
+        spans: list[tuple[int, int]] = []
+        for match in self.TOKEN_PATTERN.finditer(text):
+            start, end = match.span()
+            token = text[start:end]
+            if len(token) <= 40:
+                spans.append((start, end))
+                continue
+            for index in range(start, end):
+                spans.append((index, index + 1))
+        return spans

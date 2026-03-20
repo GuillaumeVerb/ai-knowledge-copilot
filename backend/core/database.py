@@ -8,12 +8,14 @@ CREATE TABLE IF NOT EXISTS documents (
     id TEXT PRIMARY KEY,
     filename TEXT NOT NULL,
     original_filename TEXT NOT NULL,
+    title TEXT,
     mime_type TEXT NOT NULL,
     size_bytes INTEGER NOT NULL,
     source_type TEXT NOT NULL DEFAULT 'upload',
     workspace_id TEXT,
     category TEXT,
     document_date TEXT,
+    version TEXT,
     version_group_id TEXT,
     version_number INTEGER NOT NULL DEFAULT 1,
     supersedes_document_id TEXT,
@@ -64,6 +66,8 @@ def initialize_database(connection: sqlite3.Connection) -> None:
     connection.executescript(SCHEMA_SQL)
     _ensure_column(connection, "documents", "category", "TEXT")
     _ensure_column(connection, "documents", "document_date", "TEXT")
+    _ensure_column(connection, "documents", "title", "TEXT")
+    _ensure_column(connection, "documents", "version", "TEXT")
     _ensure_column(connection, "documents", "version_group_id", "TEXT")
     _ensure_column(connection, "documents", "version_number", "INTEGER NOT NULL DEFAULT 1")
     _ensure_column(connection, "documents", "supersedes_document_id", "TEXT")

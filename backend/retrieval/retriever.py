@@ -36,7 +36,11 @@ class RetrievalService:
         semantic_results = self.vector_store.search(
             query,
             top_k=max(top_k, self.fetch_k),
-            filters={"document_ids": filters.document_ids, "tags": filters.tags},
+            filters={
+                "document_ids": filters.document_ids,
+                "tags": filters.tags,
+                "categories": filters.categories,
+            },
         )
         semantic_results = [
             result

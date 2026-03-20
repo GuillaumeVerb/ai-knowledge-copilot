@@ -4,7 +4,22 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field
 
 
-AnswerFormat = Literal["default", "resume", "etapes", "risques", "faq"]
+AnswerFormat = Literal[
+    "default",
+    "resume",
+    "etapes",
+    "risques",
+    "faq",
+    "concise",
+    "detailed",
+    "checklist",
+    "comparison",
+    "summary",
+    "structured",
+]
+
+
+LanguageCode = Literal["fr", "en", "auto"]
 
 
 class QueryFilters(BaseModel):
@@ -21,6 +36,8 @@ class QueryRequest(BaseModel):
     top_k: Optional[int] = None
     answer_format: AnswerFormat = "default"
     use_reranking: Optional[bool] = None
+    language: LanguageCode = "auto"
+    conversation_history: list[dict[str, str]] = Field(default_factory=list)
 
 
 class SourceSnippet(BaseModel):
@@ -43,12 +60,18 @@ class StructuredBlock(BaseModel):
 class QueryResponse(BaseModel):
     answer: str
     sources: list[SourceSnippet]
+    confidence: Literal["High", "Medium", "Low"] = "Low"
+    safety: Literal["Grounded", "Limited", "None"] = "None"
+    suggestions: list[str] = Field(default_factory=list)
+    detected_language: Literal["fr", "en"] = "fr"
     used_context_count: int
     latency_ms: int
     status: Literal["answered", "not_found"]
     answer_format: AnswerFormat = "default"
     sections: list[StructuredBlock] = Field(default_factory=list)
     comparison_mode: bool = False
+    clarification_needed: bool = False
+    clarifying_question: Optional[str] = None
     confidence_label: Literal["high", "medium", "low"] = "low"
     confidence_score: float = 0.0
     confidence_reason: str = ""
@@ -62,13 +85,17 @@ class CompareDocumentsRequest(BaseModel):
     question: str = Field(min_length=3)
     left_document_id: str
     right_document_id: str
-    answer_format: Literal["default", "resume", "etapes", "risques"] = "default"
+    answer_format: AnswerFormat = "comparison"
+    language: LanguageCode = "auto"
+    conversation_history: list[dict[str, str]] = Field(default_factory=list)
 
 
 class SynthesizeDocumentsRequest(BaseModel):
     question: str = Field(min_length=3)
     document_ids: list[str] = Field(min_length=2)
-    answer_format: Literal["default", "resume", "etapes", "risques"] = "resume"
+    answer_format: AnswerFormat = "summary"
+    language: LanguageCode = "auto"
+    conversation_history: list[dict[str, str]] = Field(default_factory=list)
 
 
 class HistoryItem(BaseModel):

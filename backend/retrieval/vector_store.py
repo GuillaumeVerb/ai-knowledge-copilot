@@ -126,12 +126,15 @@ class QdrantVectorStore(VectorStore):
         must_conditions: list[rest.FieldCondition] = []
         document_ids = filters.get("document_ids") or []
         tags = filters.get("tags") or []
+        categories = filters.get("categories") or []
         if document_ids:
             must_conditions.append(
                 rest.FieldCondition(key="document_id", match=rest.MatchAny(any=document_ids))
             )
         if tags:
             must_conditions.append(rest.FieldCondition(key="tags", match=rest.MatchAny(any=tags)))
+        if categories:
+            must_conditions.append(rest.FieldCondition(key="category", match=rest.MatchAny(any=categories)))
         if not must_conditions:
             return None
         return rest.Filter(must=must_conditions)
@@ -167,6 +170,8 @@ class InMemoryVectorStore(VectorStore):
                 tags = metadata.get("tags") or []
                 if not any(tag in tags for tag in filters["tags"]):
                     continue
+            if filters.get("categories") and metadata.get("category") not in filters["categories"]:
+                continue
             score = self._cosine_similarity(query_embedding, item["embedding"])
             scored.append(
                 {

@@ -50,3 +50,30 @@ def test_upload_query_summary_and_delete(temp_env):
 
     delete_response = client.delete(f"/documents/{document_id}")
     assert delete_response.status_code == 200
+
+
+def test_root_upload_alias_and_response_contract(temp_env):
+    client = temp_env["client"]
+
+    upload_response = client.post(
+        "/upload",
+        files={"file": ("policy.txt", b"Managers approve remote work schedules.", "text/plain")},
+        data={
+            "tags": json.dumps(["hr"]),
+            "title": "Remote Work Policy",
+            "category": "HR",
+            "version": "2026.1",
+        },
+    )
+
+    assert upload_response.status_code == 201
+    document = upload_response.json()["document"]
+    assert document["title"] == "Remote Work Policy"
+    assert document["version"] == "2026.1"
+
+    query_response = client.post("/query", json={"question": "What does the policy say?", "filters": {"categories": ["HR"]}})
+    assert query_response.status_code == 200
+    payload = query_response.json()
+    assert payload["confidence"] in {"High", "Medium", "Low"}
+    assert payload["safety"] in {"Grounded", "Limited", "None"}
+    assert isinstance(payload["suggestions"], list)

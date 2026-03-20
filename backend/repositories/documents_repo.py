@@ -22,21 +22,23 @@ class DocumentsRepository:
         self.connection.execute(
             """
             INSERT INTO documents (
-                id, filename, original_filename, mime_type, size_bytes, source_type,
-                workspace_id, category, document_date, version_group_id, version_number,
+                id, filename, original_filename, title, mime_type, size_bytes, source_type,
+                workspace_id, category, document_date, version, version_group_id, version_number,
                 supersedes_document_id, tags, storage_path, status, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 document_id,
                 payload.filename,
                 payload.original_filename,
+                payload.title,
                 payload.mime_type,
                 payload.size_bytes,
                 payload.source_type,
                 payload.workspace_id,
                 payload.category,
                 payload.document_date.isoformat() if payload.document_date else None,
+                payload.version,
                 version_group_id,
                 payload.version_number,
                 payload.supersedes_document_id,
@@ -196,12 +198,14 @@ class DocumentsRepository:
             id=row["id"],
             filename=row["filename"],
             original_filename=row["original_filename"],
+            title=row["title"],
             mime_type=row["mime_type"],
             size_bytes=row["size_bytes"],
             source_type=row["source_type"],
             workspace_id=row["workspace_id"],
             category=row["category"],
             document_date=date.fromisoformat(row["document_date"]) if row["document_date"] else None,
+            version=row["version"],
             version_group_id=row["version_group_id"],
             version_number=row["version_number"] or 1,
             supersedes_document_id=row["supersedes_document_id"],

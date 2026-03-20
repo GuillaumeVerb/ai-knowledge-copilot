@@ -4,6 +4,7 @@ import logging
 import re
 import time
 from collections import defaultdict
+from itertools import combinations
 
 from backend.llm.answer_formatter import format_citations
 from backend.llm.generator import LLMProvider
@@ -57,6 +58,9 @@ class QueryService:
 
     def answer_query(self, request: QueryRequest) -> QueryResponse:
         start = time.perf_counter()
+        normalized_format = self._normalize_answer_format(request.answer_format)
+        language = self._resolve_language(request.language, request.question)
+        clarification_needed, clarifying_question = self._detect_ambiguity(request.question, request.filters, language)
         sources = self.retrieval_service.retrieve(
             request.question,
             filters=request.filters,
@@ -70,12 +74,18 @@ class QueryService:
         sources = self._narrow_sources_for_query(
             request.question,
             sources,
-            request.answer_format,
-            max_sources=2 if request.answer_format == "default" else 3,
+            normalized_format,
+            max_sources=2 if normalized_format in {"default", "concise"} else 3,
         )
         if not sources:
             latency_ms = int((time.perf_counter() - start) * 1000)
-            answer = "Je ne sais pas sur la base des documents disponibles."
+            answer = self._unknown_answer(language)
+            suggestions = self._build_suggestions(
+                request.question,
+                request.filters,
+                [],
+                clarification_needed=clarification_needed,
+            )
             history_entry = self.history_repository.create_entry(
                 question=request.question,
                 answer=answer,
@@ -86,32 +96,47 @@ class QueryService:
             return QueryResponse(
                 answer=answer,
                 sources=[],
+                confidence="Low",
+                safety="None",
+                suggestions=suggestions,
+                detected_language=language,
                 used_context_count=0,
                 latency_ms=latency_ms,
                 status="not_found",
-                answer_format=request.answer_format,
+                answer_format=normalized_format,
                 sections=[
                     StructuredBlock(
                         title="No answer found",
                         kind="warning",
-                        content="The requested information is not available in the current document set.",
+                        content=self._no_answer_explanation(language),
                     )
                 ],
+                clarification_needed=clarification_needed,
+                clarifying_question=clarifying_question,
                 confidence_label="low",
                 confidence_score=0.0,
-                confidence_reason="No sufficiently relevant evidence found in the indexed documents.",
+                confidence_reason=self._translate_confidence_reason(
+                    "No sufficiently relevant evidence found in the indexed documents.",
+                    language,
+                ),
                 evidence_documents=[],
                 evidence_summary="0 source excerpts across 0 documents.",
                 caution="The assistant did not find enough grounded evidence to answer safely.",
                 history_id=history_entry.id,
             )
-        prompt = build_query_prompt(request.question, sources, request.answer_format)
+        prompt = build_query_prompt(
+            request.question,
+            sources,
+            normalized_format,
+            language=language,
+            conversation_history=request.conversation_history,
+        )
         raw_answer = self.llm_provider.generate(prompt)
         display_sources = self._select_display_sources(raw_answer, sources)
         answer = format_citations(raw_answer, display_sources)
         sections = self._build_answer_sections(
             request.question,
-            request.answer_format,
+            normalized_format,
             raw_answer,
             display_sources,
         )
@@ -120,6 +145,12 @@ class QueryService:
             request.question,
             display_sources,
             comparison_mode=False,
+        )
+        suggestions = self._build_suggestions(
+            request.question,
+            request.filters,
+            display_sources,
+            clarification_needed=clarification_needed,
         )
         history_entry = self.history_repository.create_entry(
             question=request.question,
@@ -131,12 +162,18 @@ class QueryService:
         return QueryResponse(
             answer=answer,
             sources=display_sources,
+            confidence=self._display_confidence(confidence_label),
+            safety=self._safety_label(display_sources, confidence_label),
+            suggestions=suggestions,
+            detected_language=language,
             used_context_count=len(display_sources),
             latency_ms=latency_ms,
             status="answered",
-            answer_format=request.answer_format,
+            answer_format=normalized_format,
             sections=sections,
             comparison_mode=False,
+            clarification_needed=clarification_needed,
+            clarifying_question=clarifying_question,
             confidence_label=confidence_label,
             confidence_score=confidence_score,
             confidence_reason=confidence_reason,
@@ -148,6 +185,7 @@ class QueryService:
 
     def summarize_document(self, document_id: str) -> DocumentSummaryResponse:
         start = time.perf_counter()
+        language = "fr"
         document = self.documents_repository.get_document(document_id)
         chunks = self.documents_repository.list_chunks_for_document(document_id)[: self.max_summary_chunks]
         sources = [
@@ -163,7 +201,7 @@ class QueryService:
             for chunk in chunks
         ]
         sources = sources[:4]
-        prompt = build_summary_prompt(document.original_filename, sources)
+        prompt = build_summary_prompt(document.original_filename, sources, language=language)
         raw_summary = self.llm_provider.generate(prompt)
         display_sources = self._select_display_sources(raw_summary, sources)
         summary = format_citations(raw_summary, display_sources)
@@ -182,6 +220,13 @@ class QueryService:
         left_document = self.documents_repository.get_document(request.left_document_id)
         right_document = self.documents_repository.get_document(request.right_document_id)
         start = time.perf_counter()
+        normalized_format = self._normalize_answer_format(request.answer_format)
+        language = self._resolve_language(request.language, request.question)
+        clarification_needed, clarifying_question = self._detect_ambiguity(
+            request.question,
+            QueryFilters(document_ids=[request.left_document_id, request.right_document_id]),
+            language,
+        )
         left_sources = self.retrieval_service.retrieve(
             request.question,
             filters=QueryFilters(document_ids=[request.left_document_id], tags=[]),
@@ -197,7 +242,7 @@ class QueryService:
         sources = self._narrow_sources_for_query(
             request.question,
             left_sources + right_sources,
-            request.answer_format,
+            normalized_format,
             max_sources=4,
         )
         if not sources:
@@ -211,6 +256,7 @@ class QueryService:
             left_document.original_filename,
             right_document.original_filename,
             sources,
+            language=language,
         )
         raw_answer = self.llm_provider.generate(prompt)
         display_sources = self._select_display_sources(raw_answer, sources, max_sources=4)
@@ -226,6 +272,13 @@ class QueryService:
             display_sources,
             comparison_mode=True,
         )
+        suggestions = self._build_suggestions(
+            request.question,
+            QueryFilters(document_ids=[request.left_document_id, request.right_document_id]),
+            display_sources,
+            clarification_needed=clarification_needed,
+            comparison_mode=True,
+        )
         history_entry = self.history_repository.create_entry(
             question=request.question,
             answer=answer,
@@ -236,12 +289,18 @@ class QueryService:
         return QueryResponse(
             answer=answer,
             sources=display_sources,
+            confidence=self._display_confidence(confidence_label),
+            safety=self._safety_label(display_sources, confidence_label),
+            suggestions=suggestions,
+            detected_language=language,
             used_context_count=len(display_sources),
             latency_ms=latency_ms,
             status="answered" if display_sources else "not_found",
-            answer_format=request.answer_format,
+            answer_format=normalized_format,
             sections=sections,
             comparison_mode=True,
+            clarification_needed=clarification_needed,
+            clarifying_question=clarifying_question,
             confidence_label=confidence_label,
             confidence_score=confidence_score,
             confidence_reason=confidence_reason,
@@ -253,6 +312,13 @@ class QueryService:
 
     def synthesize_documents(self, request: SynthesizeDocumentsRequest) -> QueryResponse:
         start = time.perf_counter()
+        normalized_format = self._normalize_answer_format(request.answer_format)
+        language = self._resolve_language(request.language, request.question)
+        clarification_needed, clarifying_question = self._detect_ambiguity(
+            request.question,
+            QueryFilters(document_ids=request.document_ids),
+            language,
+        )
         documents = [self.documents_repository.get_document(document_id) for document_id in request.document_ids]
         filters = QueryFilters(document_ids=request.document_ids)
         sources = self.retrieval_service.retrieve(
@@ -264,14 +330,21 @@ class QueryService:
         sources = self._narrow_sources_for_query(
             request.question,
             sources,
-            request.answer_format,
+            normalized_format,
             max_sources=4,
         )
         if not sources:
             sources = self._fallback_sources(request.question, filters, 4)
         if not sources:
             latency_ms = int((time.perf_counter() - start) * 1000)
-            answer = "Je ne sais pas sur la base des documents selectionnes."
+            answer = self._unknown_answer(language)
+            suggestions = self._build_suggestions(
+                request.question,
+                QueryFilters(document_ids=request.document_ids),
+                [],
+                clarification_needed=clarification_needed,
+                synthesis_mode=True,
+            )
             history_entry = self.history_repository.create_entry(
                 question=request.question,
                 answer=answer,
@@ -282,27 +355,42 @@ class QueryService:
             return QueryResponse(
                 answer=answer,
                 sources=[],
+                confidence="Low",
+                safety="None",
+                suggestions=suggestions,
+                detected_language=language,
                 used_context_count=0,
                 latency_ms=latency_ms,
                 status="not_found",
-                answer_format=request.answer_format,
+                answer_format=normalized_format,
                 sections=[
                     StructuredBlock(
                         title="No synthesis available",
                         kind="warning",
-                        content="No shared evidence was found across the selected documents.",
+                        content=self._no_synthesis_explanation(language),
                     )
                 ],
+                clarification_needed=clarification_needed,
+                clarifying_question=clarifying_question,
                 confidence_label="low",
                 confidence_score=0.0,
-                confidence_reason="The selected documents do not contain enough relevant overlap for a grounded synthesis.",
+                confidence_reason=self._translate_confidence_reason(
+                    "The selected documents do not contain enough relevant overlap for a grounded synthesis.",
+                    language,
+                ),
                 evidence_documents=[],
                 evidence_summary="0 source excerpts across 0 documents.",
                 caution="The selected documents do not provide enough overlapping evidence for a reliable synthesis.",
                 history_id=history_entry.id,
             )
 
-        prompt = build_query_prompt(request.question, sources, "resume")
+        prompt = build_query_prompt(
+            request.question,
+            sources,
+            normalized_format,
+            language=language,
+            conversation_history=request.conversation_history,
+        )
         raw_answer = self.llm_provider.generate(prompt)
         display_sources = self._select_display_sources(raw_answer, sources, max_sources=4)
         answer = format_citations(raw_answer, display_sources)
@@ -311,6 +399,13 @@ class QueryService:
             request.question,
             display_sources,
             comparison_mode=True,
+        )
+        suggestions = self._build_suggestions(
+            request.question,
+            QueryFilters(document_ids=request.document_ids),
+            display_sources,
+            clarification_needed=clarification_needed,
+            synthesis_mode=True,
         )
         history_entry = self.history_repository.create_entry(
             question=request.question,
@@ -322,12 +417,18 @@ class QueryService:
         return QueryResponse(
             answer=answer,
             sources=display_sources,
+            confidence=self._display_confidence(confidence_label),
+            safety=self._safety_label(display_sources, confidence_label),
+            suggestions=suggestions,
+            detected_language=language,
             used_context_count=len(display_sources),
             latency_ms=latency_ms,
             status="answered",
-            answer_format=request.answer_format,
+            answer_format=normalized_format,
             sections=self._build_synthesis_sections(documents, raw_answer, display_sources),
             comparison_mode=False,
+            clarification_needed=clarification_needed,
+            clarifying_question=clarifying_question,
             confidence_label=confidence_label,
             confidence_score=confidence_score,
             confidence_reason=confidence_reason,
@@ -424,7 +525,7 @@ class QueryService:
         for source in sources:
             excerpt_tokens = set(self._tokenize(source.excerpt))
             overlap = len(question_tokens & excerpt_tokens)
-            if overlap == 0 and answer_format == "default":
+            if overlap == 0 and answer_format in {"default", "concise"}:
                 continue
             narrowed.append((overlap, source.score or 0.0, source))
         narrowed.sort(key=lambda item: (item[0], item[1]), reverse=True)
@@ -441,13 +542,13 @@ class QueryService:
         sources: list[SourceSnippet],
     ) -> list[StructuredBlock]:
         clean_answer = self._strip_sources_line(answer)
-        if answer_format == "resume":
+        if answer_format in {"resume", "summary"}:
             return [
                 StructuredBlock(title="Summary", kind="bullets", items=self._extract_bullets(clean_answer, fallback_limit=4))
             ]
-        if answer_format == "etapes":
+        if answer_format in {"etapes", "checklist"}:
             return [
-                StructuredBlock(title="Steps", kind="numbered", items=self._extract_bullets(clean_answer, fallback_limit=4))
+                StructuredBlock(title="Checklist", kind="numbered", items=self._extract_bullets(clean_answer, fallback_limit=5))
             ]
         if answer_format == "risques":
             return [
@@ -457,6 +558,36 @@ class QueryService:
             return [
                 StructuredBlock(title="FAQ", kind="faq", content=f"Q: {question}\nA: {clean_answer}")
             ]
+        if answer_format == "detailed":
+            bullets = self._extract_bullets(clean_answer, fallback_limit=5)
+            return [
+                StructuredBlock(title="Executive answer", kind="summary", content=bullets[0] if bullets else clean_answer),
+                StructuredBlock(title="Key details", kind="bullets", items=bullets[1:] if len(bullets) > 1 else bullets),
+                StructuredBlock(
+                    title="Source coverage",
+                    kind="bullets",
+                    items=[f"{source.document_name}" + (f" p.{source.page_number}" if source.page_number else "") for source in sources],
+                ),
+            ]
+        if answer_format == "comparison":
+            points = self._extract_bullets(clean_answer, fallback_limit=6)
+            midpoint = max(1, len(points) // 2)
+            return [
+                StructuredBlock(title="Comparison summary", kind="summary", content=clean_answer),
+                StructuredBlock(title="Differences", kind="bullets", items=points[:midpoint]),
+                StructuredBlock(title="Operational impact", kind="bullets", items=points[midpoint:] or points[:2]),
+            ]
+        if answer_format == "structured":
+            bullets = self._extract_bullets(clean_answer, fallback_limit=5)
+            return [
+                StructuredBlock(title="Answer", kind="summary", content=bullets[0] if bullets else clean_answer),
+                StructuredBlock(title="Supporting points", kind="bullets", items=bullets[1:] if len(bullets) > 1 else bullets),
+                StructuredBlock(
+                    title="Sources used",
+                    kind="bullets",
+                    items=[f"{source.document_name}" + (f" p.{source.page_number}" if source.page_number else "") for source in sources],
+                ),
+            ]
         return [
             StructuredBlock(title="Summary", kind="summary", content=clean_answer),
             StructuredBlock(
@@ -465,6 +596,14 @@ class QueryService:
                 items=[f"{source.document_name}" + (f" p.{source.page_number}" if source.page_number else "") for source in sources],
             ),
         ]
+
+    def _normalize_answer_format(self, answer_format: str) -> str:
+        aliases = {
+            "default": "concise",
+            "resume": "summary",
+            "etapes": "checklist",
+        }
+        return aliases.get(answer_format, answer_format)
 
     def _compute_confidence(
         self,
@@ -477,24 +616,56 @@ class QueryService:
             return 0.0, "low", "No sufficiently relevant evidence found in the indexed documents."
 
         top_score = max((source.score or 0.0) for source in sources)
-        avg_score = sum((source.score or 0.0) for source in sources) / max(len(sources), 1)
-        normalized_top = min(top_score / 1.0, 1.0)
-        normalized_avg = min(avg_score / 1.0, 1.0)
-        source_count_penalty = 0.08 * max(len(sources) - 2, 0)
-        diversity_penalty = 0.12 if comparison_mode and len({source.document_name for source in sources}) > 1 else 0.0
-
+        avg_score = sum((source.score or 0.0) for source in sources) / len(sources)
+        support_score = min(len(sources) / 3.0, 1.0)
+        similarity_score = min(max((top_score + avg_score) / 2.0, 0.0), 1.0)
+        consistency_score = self._consistency_score(question, sources, comparison_mode=comparison_mode)
         confidence_score = max(
             0.0,
-            min(
-                1.0,
-                0.55 * normalized_top + 0.35 * normalized_avg + (0.12 if len(sources) <= 2 else 0.0) - source_count_penalty - diversity_penalty,
-            ),
+            min(1.0, 0.3 * support_score + 0.45 * similarity_score + 0.25 * consistency_score),
         )
         if confidence_score >= 0.75:
-            return confidence_score, "high", f"Answer supported by {len(sources)} concentrated and relevant source(s)."
+            return confidence_score, "high", (
+                f"High support from {len(sources)} chunk(s), strong retrieval similarity, "
+                f"and consistent evidence across the cited context."
+            )
         if confidence_score >= 0.45:
-            return confidence_score, "medium", f"Answer supported by {len(sources)} useful source(s), but evidence is less concentrated."
-        return confidence_score, "low", f"Evidence is weak or dispersed across {len(sources)} source(s)."
+            return confidence_score, "medium", (
+                f"Supported by {len(sources)} chunk(s), but either retrieval similarity or agreement "
+                f"between chunks is only moderate."
+            )
+        return confidence_score, "low", (
+            f"Evidence is limited: {len(sources)} supporting chunk(s) with weak similarity or low consistency."
+        )
+
+    def _consistency_score(
+        self,
+        question: str,
+        sources: list[SourceSnippet],
+        *,
+        comparison_mode: bool,
+    ) -> float:
+        if len(sources) == 1:
+            return 0.7
+
+        question_tokens = set(self._tokenize(question))
+        pair_scores: list[float] = []
+        for left, right in combinations(sources, 2):
+            left_tokens = set(self._tokenize(left.excerpt))
+            right_tokens = set(self._tokenize(right.excerpt))
+            shared = left_tokens & right_tokens
+            total = left_tokens | right_tokens
+            pair_scores.append((len(shared) / len(total)) if total else 0.0)
+
+        base_score = sum(pair_scores) / len(pair_scores) if pair_scores else 0.0
+        question_coverage = sum(
+            1.0
+            for source in sources
+            if question_tokens and question_tokens & set(self._tokenize(source.excerpt))
+        ) / len(sources)
+        if comparison_mode and len({source.document_id for source in sources}) > 1:
+            return min(1.0, 0.55 * question_coverage + 0.45 * base_score)
+        return min(1.0, 0.4 * question_coverage + 0.6 * base_score)
 
     def _evidence_documents(self, sources: list[SourceSnippet]) -> list[str]:
         return list(dict.fromkeys(source.document_name for source in sources))
@@ -522,6 +693,16 @@ class QueryService:
         if confidence_label == "medium":
             return "Evidence is useful but not fully concentrated. Validate the cited excerpts before acting on the answer."
         return "Evidence is limited or dispersed. Use the cited excerpts to confirm the answer before relying on it."
+
+    def _safety_label(self, sources: list[SourceSnippet], confidence_label: str) -> str:
+        if not sources:
+            return "None"
+        if confidence_label == "high":
+            return "Grounded"
+        return "Limited"
+
+    def _display_confidence(self, confidence_label: str) -> str:
+        return confidence_label.capitalize()
 
     def _build_summary_sections(
         self,
@@ -565,19 +746,24 @@ class QueryService:
                 content=f"{left_name} and {right_name} cover related procedures but emphasize different operational details.",
             ),
             StructuredBlock(
-                title="Points communs",
+                title="Shared themes",
                 kind="bullets",
                 items=[f"Both documents mention {', '.join(similarities)}."] if similarities else ["Both documents address the same operational theme."],
             ),
             StructuredBlock(
-                title="Différences",
+                title="Structured differences",
                 kind="bullets",
                 items=[f"{left_name}: {point}" for point in left_points] + [f"{right_name}: {point}" for point in right_points],
             ),
             StructuredBlock(
-                title="Impact opérationnel",
+                title="Key operational changes",
                 kind="warning",
                 items=["Align escalation expectations across teams and clarify who owns each step."],
+            ),
+            StructuredBlock(
+                title="Contradictions",
+                kind="bullets",
+                items=self._detect_contradictions(left_points, right_points),
             ),
         ]
 
@@ -597,12 +783,17 @@ class QueryService:
                 content=self._strip_sources_line(answer),
             ),
             StructuredBlock(
+                title="Key themes",
+                kind="bullets",
+                items=self._extract_themes(sources),
+            ),
+            StructuredBlock(
                 title="Documents synthesized",
                 kind="bullets",
                 items=[document.original_filename for document in documents],
             ),
             StructuredBlock(
-                title="Cross-document insights",
+                title="Grouped insights",
                 kind="bullets",
                 items=self._extract_bullets(self._strip_sources_line(answer), fallback_limit=4),
             ),
@@ -646,3 +837,138 @@ class QueryService:
     def _trim_excerpt(self, text: str) -> str:
         sentences = self._split_sentences(text)
         return sentences[0] if sentences else text.strip()
+
+    def _detect_ambiguity(
+        self,
+        question: str,
+        filters: QueryFilters,
+        language: str,
+    ) -> tuple[bool, Optional[str]]:
+        lowered = question.strip().lower()
+        tokens = self._tokenize(question)
+        ambiguous_phrases = {"this", "that", "it", "they", "them", "these", "those", "latest version"}
+        if len(tokens) < 4 or any(phrase in lowered for phrase in ambiguous_phrases):
+            if not filters.document_ids and not filters.tags and not filters.categories:
+                return True, (
+                    "Pouvez-vous préciser le périmètre, l’équipe ou la catégorie de documents à utiliser ?"
+                    if language == "fr"
+                    else "Can you clarify which document set, team, or category I should use?"
+                )
+        return False, None
+
+    def _build_suggestions(
+        self,
+        question: str,
+        filters: QueryFilters,
+        sources: list[SourceSnippet],
+        *,
+        clarification_needed: bool,
+        comparison_mode: bool = False,
+        synthesis_mode: bool = False,
+    ) -> list[str]:
+        suggestions: list[str] = []
+        if clarification_needed:
+            suggestions.append(
+                "Préciser le périmètre ou le corpus ciblé avant de répondre."
+                if self._is_french_question(question)
+                else "Clarify the scope or target document set before answering."
+            )
+        if not filters.categories:
+            suggestions.append(
+                "Souhaitez-vous limiter aux documents RH ?"
+                if self._is_french_question(question)
+                else "Do you want HR documents only?"
+            )
+        if not filters.tags:
+            suggestions.append(
+                "Filtrer par tags pour réduire le périmètre de recherche."
+                if self._is_french_question(question)
+                else "Filter by tags to narrow the retrieval set."
+            )
+        if not comparison_mode:
+            suggestions.append(
+                "Résumer un document pour obtenir une réponse plus ciblée."
+                if self._is_french_question(question)
+                else "Summarize a single document for a focused answer."
+            )
+        if not synthesis_mode:
+            suggestions.append(
+                "Comparer deux documents pour mettre en évidence les différences."
+                if self._is_french_question(question)
+                else "Compare two documents to highlight policy differences."
+            )
+        if sources and len({source.document_id for source in sources}) > 1:
+            suggestions.append(
+                "Synthétiser les documents cités par thème."
+                if self._is_french_question(question)
+                else "Synthesize the cited documents into grouped insights."
+            )
+        return list(dict.fromkeys(suggestions))[:4]
+
+    def _detect_contradictions(self, left_points: list[str], right_points: list[str]) -> list[str]:
+        contradictions: list[str] = []
+        for left_point in left_points:
+            for right_point in right_points:
+                left_lower = left_point.lower()
+                right_lower = right_point.lower()
+                if ("require" in left_lower and "not" in right_lower) or ("not" in left_lower and "require" in right_lower):
+                    contradictions.append(f"{left_point} | {right_point}")
+        if contradictions:
+            return contradictions[:2]
+        return ["No direct contradiction detected in the top retrieved excerpts."]
+
+    def _extract_themes(self, sources: list[SourceSnippet]) -> list[str]:
+        terms: dict[str, int] = defaultdict(int)
+        for source in sources:
+            for token in self._tokenize(source.excerpt):
+                terms[token] += 1
+        ranked = [term for term, count in sorted(terms.items(), key=lambda item: (-item[1], item[0])) if count > 1]
+        if not ranked:
+            return ["No dominant shared theme detected beyond the cited excerpts."]
+        return [f"Theme: {term}" for term in ranked[:4]]
+
+    def _resolve_language(self, requested_language: str, question: str) -> str:
+        if requested_language in {"fr", "en"}:
+            return requested_language
+        return "fr" if self._is_french_question(question) else "en"
+
+    def _is_french_question(self, text: str) -> bool:
+        lowered = text.lower()
+        french_markers = {
+            "bonjour", "comment", "pourquoi", "quelle", "quelles", "quels", "est-ce", "documents",
+            "procédure", "synthèse", "résumé", "réponse", "politique", "sécurité", "support", "rh",
+            "bonjour", "avec", "sans", "entre", "dans", "sur", "des", "les", "une", "le", "la",
+        }
+        marker_hits = sum(1 for marker in french_markers if marker in lowered)
+        accent_hits = sum(1 for char in lowered if char in "éèàùçôîâêûëïü")
+        return marker_hits >= 2 or accent_hits >= 1
+
+    def _unknown_answer(self, language: str) -> str:
+        return (
+            "Je ne sais pas sur la base des documents disponibles."
+            if language == "fr"
+            else "I don't know based on available documents."
+        )
+
+    def _no_answer_explanation(self, language: str) -> str:
+        return (
+            "Je ne sais pas sur la base des documents disponibles. Les preuves actuelles ne suffisent pas pour répondre de façon fiable."
+            if language == "fr"
+            else "I don't know based on available documents. The current evidence is not strong enough to answer safely."
+        )
+
+    def _no_synthesis_explanation(self, language: str) -> str:
+        return (
+            "Je ne sais pas sur la base des documents disponibles. Les documents sélectionnés ne contiennent pas assez d’éléments convergents pour une synthèse fiable."
+            if language == "fr"
+            else "I don't know based on available documents. The selected set does not contain enough shared evidence for a safe synthesis."
+        )
+
+    def _translate_confidence_reason(self, reason: str, language: str) -> str:
+        if language != "fr":
+            return reason
+        translations = {
+            "No sufficiently relevant evidence found in the indexed documents.": "Aucune preuve suffisamment pertinente n’a été trouvée dans les documents indexés.",
+            "The selected documents do not contain enough relevant overlap for a grounded synthesis.": "Les documents sélectionnés ne contiennent pas assez de recoupements pertinents pour produire une synthèse fondée.",
+        }
+        return translations.get(reason, reason)

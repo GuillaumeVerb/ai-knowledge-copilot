@@ -60,8 +60,10 @@ class DocumentIngestionService:
         mime_type: str,
         content: bytes,
         tags: Optional[list[str]] = None,
+        title: Optional[str] = None,
         category: Optional[str] = None,
         document_date: Optional[date] = None,
+        version: Optional[str] = None,
         version_group_id: Optional[str] = None,
         version_number: int = 1,
         supersedes_document_id: Optional[str] = None,
@@ -73,6 +75,7 @@ class DocumentIngestionService:
             DocumentCreate(
                 filename=storage_path.name,
                 original_filename=filename,
+                title=title or Path(filename).stem,
                 mime_type=mime_type,
                 size_bytes=len(content),
                 storage_path=str(storage_path),
@@ -80,6 +83,7 @@ class DocumentIngestionService:
                 status="processing",
                 category=category,
                 document_date=document_date,
+                version=version,
                 version_group_id=version_group_id,
                 version_number=version_number,
                 supersedes_document_id=supersedes_document_id,
@@ -101,12 +105,14 @@ class DocumentIngestionService:
                         "metadata": {
                             "document_id": document.id,
                             "document_name": document.original_filename,
+                            "title": document.title,
                             "chunk_id": chunk.id,
                             "page_number": chunk.page_number,
                             "section_title": chunk.section_title,
                             "tags": document.tags,
                             "category": document.category,
                             "document_date": document.document_date.isoformat() if document.document_date else None,
+                            "version": document.version,
                             "version_number": document.version_number,
                         },
                     }
@@ -139,12 +145,14 @@ class DocumentIngestionService:
                     "metadata": {
                         "document_id": document.id,
                         "document_name": document.original_filename,
+                        "title": document.title,
                         "chunk_id": chunk.id,
                         "page_number": chunk.page_number,
                         "section_title": chunk.section_title,
                         "tags": document.tags,
                         "category": document.category,
                         "document_date": document.document_date.isoformat() if document.document_date else None,
+                        "version": document.version,
                         "version_number": document.version_number,
                     },
                 }
@@ -160,8 +168,10 @@ class DocumentIngestionService:
         mime_type: str,
         content: bytes,
         tags: Optional[list[str]] = None,
+        title: Optional[str] = None,
         category: Optional[str] = None,
         document_date: Optional[date] = None,
+        version: Optional[str] = None,
     ) -> DocumentUploadResponse:
         previous = self.documents_repo.get_document(document_id)
         version_group_id = previous.version_group_id or previous.id
@@ -171,8 +181,10 @@ class DocumentIngestionService:
             mime_type=mime_type,
             content=content,
             tags=tags if tags is not None else previous.tags,
+            title=title if title is not None else previous.title,
             category=category if category is not None else previous.category,
             document_date=document_date if document_date is not None else previous.document_date,
+            version=version if version is not None else previous.version,
             version_group_id=version_group_id,
             version_number=next_version_number,
             supersedes_document_id=previous.id,

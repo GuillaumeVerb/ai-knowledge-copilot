@@ -19,8 +19,9 @@ app.add_middleware(
 )
 app.include_router(health.router)
 app.include_router(documents.router)
+app.include_router(documents.public_router)
 app.include_router(query.router)
+app.include_router(query.public_router)
 app.include_router(summaries.router)
 app.include_router(history.router)
 app.include_router(admin.router)
-

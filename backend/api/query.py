@@ -11,6 +11,7 @@ from backend.services import QueryService
 
 
 router = APIRouter(tags=["query"])
+public_router = APIRouter(tags=["query"])
 
 
 @router.post("/query", response_model=QueryResponse)
@@ -32,6 +33,14 @@ def compare_documents(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+@public_router.post("/compare", response_model=QueryResponse)
+def compare_documents_alias(
+    request: CompareDocumentsRequest,
+    query_service: QueryService = Depends(get_query_service),
+) -> QueryResponse:
+    return compare_documents(request, query_service)
+
+
 @router.post("/query/synthesize", response_model=QueryResponse)
 def synthesize_documents(
     request: SynthesizeDocumentsRequest,
@@ -41,3 +50,11 @@ def synthesize_documents(
         return query_service.synthesize_documents(request)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@public_router.post("/synthesize", response_model=QueryResponse)
+def synthesize_documents_alias(
+    request: SynthesizeDocumentsRequest,
+    query_service: QueryService = Depends(get_query_service),
+) -> QueryResponse:
+    return synthesize_documents(request, query_service)

@@ -11,14 +11,16 @@ from backend.ingestion.indexer import DocumentIngestionService
 
 
 router = APIRouter(prefix="/documents", tags=["documents"])
+public_router = APIRouter(tags=["documents"])
 
 
-@router.post("/upload", response_model=DocumentUploadResponse, status_code=status.HTTP_201_CREATED)
-async def upload_document(
+async def _upload_document(
     file: UploadFile = File(...),
     tags: str = Form(default="[]"),
+    title: Optional[str] = Form(default=None),
     category: Optional[str] = Form(default=None),
     document_date: Optional[date] = Form(default=None),
+    version: Optional[str] = Form(default=None),
     ingestion_service: DocumentIngestionService = Depends(get_ingestion_service),
 ) -> DocumentUploadResponse:
     try:
@@ -34,11 +36,39 @@ async def upload_document(
             mime_type=file.content_type or "application/octet-stream",
             content=content,
             tags=[str(tag) for tag in parsed_tags],
+            title=title,
             category=category,
             document_date=document_date,
+            version=version,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/upload", response_model=DocumentUploadResponse, status_code=status.HTTP_201_CREATED)
+async def upload_document(
+    file: UploadFile = File(...),
+    tags: str = Form(default="[]"),
+    title: Optional[str] = Form(default=None),
+    category: Optional[str] = Form(default=None),
+    document_date: Optional[date] = Form(default=None),
+    version: Optional[str] = Form(default=None),
+    ingestion_service: DocumentIngestionService = Depends(get_ingestion_service),
+) -> DocumentUploadResponse:
+    return await _upload_document(file, tags, title, category, document_date, version, ingestion_service)
+
+
+@public_router.post("/upload", response_model=DocumentUploadResponse, status_code=status.HTTP_201_CREATED)
+async def upload_document_alias(
+    file: UploadFile = File(...),
+    tags: str = Form(default="[]"),
+    title: Optional[str] = Form(default=None),
+    category: Optional[str] = Form(default=None),
+    document_date: Optional[date] = Form(default=None),
+    version: Optional[str] = Form(default=None),
+    ingestion_service: DocumentIngestionService = Depends(get_ingestion_service),
+) -> DocumentUploadResponse:
+    return await _upload_document(file, tags, title, category, document_date, version, ingestion_service)
 
 
 @router.get("", response_model=list[DocumentRead])
@@ -72,8 +102,10 @@ async def reimport_document(
     document_id: str,
     file: UploadFile = File(...),
     tags: Optional[str] = Form(default=None),
+    title: Optional[str] = Form(default=None),
     category: Optional[str] = Form(default=None),
     document_date: Optional[date] = Form(default=None),
+    version: Optional[str] = Form(default=None),
     ingestion_service: DocumentIngestionService = Depends(get_ingestion_service),
 ) -> DocumentUploadResponse:
     parsed_tags: Optional[list[str]] = None
@@ -93,8 +125,10 @@ async def reimport_document(
             mime_type=file.content_type or "application/octet-stream",
             content=content,
             tags=parsed_tags,
+            title=title,
             category=category,
             document_date=document_date,
+            version=version,
         )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 class DocumentCreate(BaseModel):
     filename: str
     original_filename: str
+    title: Optional[str] = None
     mime_type: str
     size_bytes: int
     storage_path: str
@@ -16,6 +17,7 @@ class DocumentCreate(BaseModel):
     workspace_id: Optional[str] = None
     category: Optional[str] = None
     document_date: Optional[date] = None
+    version: Optional[str] = None
     version_group_id: Optional[str] = None
     version_number: int = 1
     supersedes_document_id: Optional[str] = None
@@ -25,12 +27,14 @@ class DocumentRead(BaseModel):
     id: str
     filename: str
     original_filename: str
+    title: Optional[str] = None
     mime_type: str
     size_bytes: int
     source_type: str
     workspace_id: Optional[str] = None
     category: Optional[str] = None
     document_date: Optional[date] = None
+    version: Optional[str] = None
     version_group_id: Optional[str] = None
     version_number: int = 1
     supersedes_document_id: Optional[str] = None

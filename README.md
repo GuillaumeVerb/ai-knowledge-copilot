@@ -1,12 +1,13 @@
-# AI Knowledge Copilot
+# AI Knowledge Copilot V3
 
-AI Knowledge Copilot is a grounded internal knowledge assistant demo built to prove three things at once:
+AI Knowledge Copilot V3 is a business-focused internal AI assistant built around trustworthy document workflows:
 
-- practical RAG architecture
-- product thinking beyond raw chat
-- recruiter-friendly demo quality
+- grounded answers with visible evidence
+- task-oriented workflows for HR, support, consulting, and operations
+- French-first UX with multilingual handling
+- portfolio and Malt-ready product positioning
 
-The app ingests internal files, retrieves the most relevant evidence, answers with citations, and exposes confidence, caution, and supporting source excerpts directly in the UI.
+The app ingests internal files, retrieves the most relevant evidence, answers with citations, and exposes confidence, safety, explanation, and supporting excerpts directly in the UI.
 
 ![Architecture overview](docs/assets/architecture-overview.svg)
 
@@ -21,16 +22,17 @@ This project demonstrates a more credible pattern:
 - confidence signals instead of false certainty
 - workflows for summary, comparison, synthesis, and versioning
 
-## Demo Highlights
+## V3 Highlights
 
-- grounded question answering with source excerpts
-- explicit evidence perimeter and confidence explanation
+- French-first SaaS interface with FR / EN switch
+- grounded question answering with visible source excerpts
+- trust layer with confidence, safety, and "Pourquoi cette réponse ?"
 - structured single-document summaries
 - document comparison for policy or procedure drift
-- cross-document synthesis
+- cross-document synthesis by theme
 - metadata filters for tag, category, date, and version state
-- query history plus helpful / not helpful feedback
-- React frontend tuned for portfolio and interview demos
+- recent history and session memory for follow-up questions
+- React frontend positioned like a real internal product, not a chatbot demo
 
 ## Visual Walkthrough
 
@@ -66,7 +68,7 @@ Current limits:
 
 ## Product Workflows
 
-### 1. Ask a grounded question
+### 1. Ask mode
 
 The backend retrieves candidate chunks, narrows context, generates an answer, then only displays the most relevant supporting sources.
 
@@ -74,11 +76,11 @@ The backend retrieves candidate chunks, narrows context, generates an answer, th
 
 The app produces a structured recap with overview, key points, and supporting evidence.
 
-### 3. Compare two documents
+### 3. Compare mode
 
 Useful for showing differences between procedures or policy variants, with operational implications surfaced as a structured result.
 
-### 4. Synthesize multiple documents
+### 4. Synthesis mode
 
 The user selects multiple documents and receives a grounded cross-document synthesis instead of generic free-form chat.
 
@@ -91,7 +93,7 @@ The document lineage is preserved through version group, version number, and sup
 - Backend: FastAPI, Pydantic, SQLite
 - Retrieval: Qdrant when available, in-memory fallback otherwise
 - Embeddings and generation: OpenAI mode or local fallback mode
-- Frontends: React + Vite as the primary demo, Streamlit as a dev/demo fallback
+- Frontends: React + Vite as the primary V3 product UI, Streamlit as a dev/demo fallback
 - Testing: pytest
 
 More detail lives in [docs/architecture.md](docs/architecture.md).

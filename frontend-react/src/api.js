@@ -40,13 +40,13 @@ export const api = {
       body: JSON.stringify(payload),
     }),
   compare: (payload) =>
-    request("/query/compare", {
+    request("/compare", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     }),
   synthesize: (payload) =>
-    request("/query/synthesize", {
+    request("/synthesize", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -55,23 +55,27 @@ export const api = {
     request(`/documents/${documentId}/summary`, {
       method: "POST",
     }),
-  upload: async ({ file, tags, category, documentDate }) => {
+  upload: async ({ file, tags, title, category, documentDate, version }) => {
     const formData = new FormData();
     formData.append("file", file);
     formData.append("tags", JSON.stringify(tags));
+    if (title) formData.append("title", title);
     if (category) formData.append("category", category);
     if (documentDate) formData.append("document_date", documentDate);
-    return request("/documents/upload", {
+    if (version) formData.append("version", version);
+    return request("/upload", {
       method: "POST",
       body: formData,
     });
   },
-  reimportDocument: async ({ documentId, file, tags, category, documentDate }) => {
+  reimportDocument: async ({ documentId, file, tags, title, category, documentDate, version }) => {
     const formData = new FormData();
     formData.append("file", file);
     if (tags) formData.append("tags", JSON.stringify(tags));
+    if (title) formData.append("title", title);
     if (category) formData.append("category", category);
     if (documentDate) formData.append("document_date", documentDate);
+    if (version) formData.append("version", version);
     return request(`/documents/${documentId}/reimport`, {
       method: "POST",
       body: formData,

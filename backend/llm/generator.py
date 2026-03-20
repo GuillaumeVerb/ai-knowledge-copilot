@@ -43,26 +43,27 @@ class StubLLMProvider(LLMProvider):
     }
 
     def generate(self, prompt: str) -> str:
+        wants_french = "answer in french" in prompt.lower() or "in french" in prompt.lower()
         if prompt.startswith("Summarize the document"):
             blocks = self._parse_summary_blocks(prompt)
-            return self._summarize_blocks(blocks)
+            return self._localize(self._summarize_blocks(blocks), wants_french)
         if prompt.startswith("Compare the two documents"):
             question, blocks = self._parse_compare_prompt(prompt)
-            return self._compare_blocks(blocks, question)
+            return self._localize(self._compare_blocks(blocks, question), wants_french)
         if "Context:" not in prompt:
-            return "I do not know based on the available documents."
+            return "Je ne sais pas sur la base des documents disponibles." if wants_french else "I do not know based on the available documents."
 
         instruction, question, blocks = self._parse_query_prompt(prompt)
         if not blocks:
-            return "I do not know based on the available documents."
+            return "Je ne sais pas sur la base des documents disponibles." if wants_french else "I do not know based on the available documents."
 
         if self._is_compare_question(question):
-            return self._compare_blocks(blocks, question)
+            return self._localize(self._compare_blocks(blocks, question), wants_french)
 
         relevant_sentences = self._select_relevant_sentences(question, blocks)
         if not relevant_sentences:
             relevant_sentences = self._all_sentences(blocks)[:3]
-        return self._format_answer(instruction, question, relevant_sentences)
+        return self._localize(self._format_answer(instruction, question, relevant_sentences), wants_french)
 
     def _parse_query_prompt(self, prompt: str) -> tuple[str, str, list[dict[str, str]]]:
         instruction = prompt.splitlines()[0].strip()
@@ -219,3 +220,26 @@ class StubLLMProvider(LLMProvider):
         if not common:
             return "related operational topics"
         return ", ".join(common[:3])
+
+    def _localize(self, text: str, wants_french: bool) -> str:
+        if not wants_french:
+            return text
+        replacements = {
+            "## Overview": "## Vue d'ensemble",
+            "## Key points": "## Points cles",
+            "## Summary": "## Resume",
+            "## Similarities": "## Similarites",
+            "## Differences": "## Differences",
+            "## Implications": "## Impacts operationnels",
+            "## Risks": "## Risques",
+            "## FAQ": "## FAQ",
+            "## Steps": "## Etapes",
+            "Both documents cover": "Les deux documents couvrent",
+            "Both documents focus on": "Les deux documents se concentrent sur",
+            "Teams should align escalation expectations and clarify when incident commander involvement is required.": "Les equipes doivent aligner les attentes d'escalade et clarifier quand l'intervention du responsable d'incident est requise.",
+            "I do not know based on the available documents.": "Je ne sais pas sur la base des documents disponibles.",
+        }
+        localized = text
+        for source, target in replacements.items():
+            localized = localized.replace(source, target)
+        return localized

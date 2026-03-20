@@ -1,0 +1,6 @@
+Procédure Support - Incident critique
+
+Pour un incident de sévérité 1, l'agent support ouvre un ticket prioritaire, collecte le contexte et alerte immédiatement l'astreinte.
+Le responsable d'incident coordonne les actions, publie les mises à jour internes et valide le retour à la normale.
+Si plusieurs équipes sont impliquées, une synthèse intermédiaire est envoyée toutes les 30 minutes.
+La procédure d'escalade doit rester alignée avec le runbook opérations en vigueur.
