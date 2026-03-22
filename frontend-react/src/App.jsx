@@ -98,6 +98,11 @@ const COPY = {
     integrations: "Intégrations",
     integrationsHint: "Slack et Notion disponibles prochainement.",
     darkMode: "Mode sombre",
+    loading: "Analyse en cours...",
+    emptyPromptTitle: "Posez une question pour commencer",
+    emptyPromptBody: "Le panneau de confiance affichera ici les preuves, la sécurité et l’explication de la réponse.",
+    libraryEmptyHint: "Ajoutez un document ou rechargez les données de démonstration.",
+    historyEmptyHint: "Les dernières questions et réponses fiables apparaîtront ici.",
   },
   en: {
     appName: "Document AI Copilot",
@@ -195,6 +200,11 @@ const COPY = {
     integrations: "Integrations",
     integrationsHint: "Slack and Notion placeholders available next.",
     darkMode: "Dark mode",
+    loading: "Analyzing...",
+    emptyPromptTitle: "Start with a question",
+    emptyPromptBody: "The trust layer will display evidence, safety, and explanation here.",
+    libraryEmptyHint: "Upload a document or refresh the demo dataset.",
+    historyEmptyHint: "Recent grounded questions and answers will appear here.",
   },
 };
 
@@ -228,6 +238,7 @@ function App() {
   const [history, setHistory] = useState([]);
   const [result, setResult] = useState(null);
   const [activeSourceId, setActiveSourceId] = useState(null);
+  const [previewSource, setPreviewSource] = useState(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(false);
@@ -252,6 +263,8 @@ function App() {
   const [categoryFilter, setCategoryFilter] = useState("");
   const [latestOnly, setLatestOnly] = useState(false);
   const [conversationMemory, setConversationMemory] = useState([]);
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [showExplanation, setShowExplanation] = useState(false);
 
   const t = COPY[language];
   const latestDocuments = documents.filter((item) => (latestOnly ? item.is_latest_version : true));
@@ -265,6 +278,9 @@ function App() {
     return matchesSearch && matchesCategory;
   });
   const uniqueDocs = [...new Set((result?.sources || []).map((source) => source.document_name))];
+  const previewDocument = previewSource
+    ? documents.find((item) => item.original_filename === previewSource.document_name)
+    : null;
 
   useEffect(() => {
     document.documentElement.dataset.theme = darkMode ? "dark" : "light";
@@ -452,6 +468,12 @@ function App() {
     target?.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 
+  function openSourcePreview(source) {
+    setPreviewSource(source);
+    setActiveSourceId(source.chunk_id);
+    scrollToDocument(source.document_name);
+  }
+
   return (
     <div className="v3-shell">
       <aside className="left-rail">
@@ -512,10 +534,13 @@ function App() {
 
       <main className="center-panel">
         <section className="hero-card-v3">
-          <div>
-            <span className="eyebrow">{language === "fr" ? "Assistant interne de confiance" : "Trusted internal assistant"}</span>
+          <div className="hero-copy-block">
+            <div className="hero-kicker-row">
+              <span className="eyebrow">{language === "fr" ? "Assistant interne de confiance" : "Trusted internal assistant"}</span>
+              <span className="status-dot">{health ? t.runtimeConnected : t.runtimeUnavailable}</span>
+            </div>
             <h1>{t.heroTitle}</h1>
-            <h2>{t.heroSubtitle}</h2>
+            <p className="hero-lead">{t.heroSubtitle}</p>
             <p>{t.heroDescription}</p>
           </div>
           <div className="hero-metrics">
@@ -528,9 +553,24 @@ function App() {
         {error && <div className="banner error">{error}</div>}
         {notice && <div className="banner success">{notice}</div>}
 
-        <section className="dual-grid" id="cas-dusage">
-          <InfoSection title={t.useCasesTitle} items={t.useCases} rich />
-          <InfoSection title={t.impactTitle} items={t.impact.map((item) => [item, ""])} />
+        <section className="overview-band" id="cas-dusage">
+          <div className="overview-copy">
+            <span className="eyebrow muted">{t.useCasesTitle}</span>
+            <h3>{language === "fr" ? "Pensé pour les équipes qui vivent dans la documentation" : "Built for teams living inside documentation"}</h3>
+          </div>
+          <div className="overview-grid">
+            {t.useCases.map(([label, text]) => (
+              <article key={label} className="overview-item">
+                <strong>{label}</strong>
+                <p>{text}</p>
+              </article>
+            ))}
+          </div>
+          <div className="impact-inline">
+            {t.impact.map((item) => (
+              <span key={item} className="impact-pill">{item}</span>
+            ))}
+          </div>
         </section>
 
         <section className="workspace-card">
@@ -547,43 +587,63 @@ function App() {
           </div>
 
           {activeTab === "ask" && (
-            <div className="workflow-form">
-              <div className="field-grid">
+            <div className="interaction-stage">
+              <div className="workflow-form premium-form">
+                <div className="stage-topline">
+                  <span className="stage-label">{language === "fr" ? "Interaction principale" : "Main interaction"}</span>
+                  <button className="ghost subtle-button" onClick={() => setShowAdvancedFilters((current) => !current)}>
+                    {showAdvancedFilters
+                      ? language === "fr" ? "Masquer les filtres avancés" : "Hide advanced filters"
+                      : language === "fr" ? "Afficher les filtres avancés" : "Show advanced filters"}
+                  </button>
+                </div>
                 <label>
-                  <span>{t.scopeLabel}</span>
-                  <select multiple value={selectedDocumentIds} onChange={(event) => setSelectedDocumentIds(Array.from(event.target.selectedOptions).map((option) => option.value))}>
-                    {indexedDocuments.map((doc) => (
-                      <option key={doc.id} value={doc.id}>{doc.title || doc.original_filename}</option>
-                    ))}
-                  </select>
+                  <span>{t.questionLabel}</span>
+                  <textarea value={question} onChange={(event) => setQuestion(event.target.value)} placeholder={t.askHint} />
                 </label>
-                <label>
-                  <span>{t.categoryLabel}</span>
-                  <input value={selectedCategory} onChange={(event) => setSelectedCategory(event.target.value)} placeholder={t.placeholders.filter} />
-                </label>
-                <label>
-                  <span>{t.tagsLabel}</span>
-                  <input value={selectedTags} onChange={(event) => setSelectedTags(event.target.value)} placeholder={t.placeholders.tags} />
-                </label>
-                <label>
-                  <span>{t.formatLabel}</span>
-                  <select value={answerFormat} onChange={(event) => setAnswerFormat(event.target.value)}>
-                    {ANSWER_FORMATS.map((option) => (
-                      <option key={option.value} value={option.value}>{option[language]}</option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-              <label>
-                <span>{t.questionLabel}</span>
-                <textarea value={question} onChange={(event) => setQuestion(event.target.value)} placeholder={t.askHint} />
-              </label>
-              <div className="action-row">
-                <button className="primary" onClick={handleAsk} disabled={loading || !question.trim()}>
-                  {loading ? "..." : t.askButton}
-                </button>
-                <button className="secondary" disabled>{t.exportButton}</button>
-                <button className="secondary" disabled>{t.shareButton}</button>
+                <div className="compact-row">
+                  <label>
+                    <span>{t.formatLabel}</span>
+                    <select value={answerFormat} onChange={(event) => setAnswerFormat(event.target.value)}>
+                      {ANSWER_FORMATS.map((option) => (
+                        <option key={option.value} value={option.value}>{option[language]}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <div className="helper-callout">
+                    <strong>{language === "fr" ? "Mode recommandé" : "Recommended mode"}</strong>
+                    <span>{ANSWER_FORMATS.find((option) => option.value === answerFormat)?.[language]}</span>
+                  </div>
+                </div>
+                {showAdvancedFilters && (
+                  <div className="advanced-panel">
+                    <div className="field-grid">
+                      <label>
+                        <span>{t.scopeLabel}</span>
+                        <select multiple value={selectedDocumentIds} onChange={(event) => setSelectedDocumentIds(Array.from(event.target.selectedOptions).map((option) => option.value))}>
+                          {indexedDocuments.map((doc) => (
+                            <option key={doc.id} value={doc.id}>{doc.title || doc.original_filename}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        <span>{t.categoryLabel}</span>
+                        <input value={selectedCategory} onChange={(event) => setSelectedCategory(event.target.value)} placeholder={t.placeholders.filter} />
+                      </label>
+                      <label>
+                        <span>{t.tagsLabel}</span>
+                        <input value={selectedTags} onChange={(event) => setSelectedTags(event.target.value)} placeholder={t.placeholders.tags} />
+                      </label>
+                    </div>
+                  </div>
+                )}
+                <div className="action-row stage-actions">
+                  <button className="primary" onClick={handleAsk} disabled={loading || !question.trim()}>
+                    {loading ? t.loading : t.askButton}
+                  </button>
+                  <button className="secondary quiet" disabled>{t.exportButton}</button>
+                  <button className="secondary quiet" disabled>{t.shareButton}</button>
+                </div>
               </div>
             </div>
           )}
@@ -616,7 +676,7 @@ function App() {
               </label>
               <div className="action-row">
                 <button className="primary" onClick={handleCompare} disabled={loading || !leftDocumentId || !rightDocumentId || !compareQuestion.trim()}>
-                  {loading ? "..." : t.compareButton}
+                  {loading ? t.loading : t.compareButton}
                 </button>
               </div>
             </div>
@@ -638,12 +698,61 @@ function App() {
               </label>
               <div className="action-row">
                 <button className="primary" onClick={handleSynthesis} disabled={loading || synthesisDocumentIds.length < 2 || !synthesisQuestion.trim()}>
-                  {loading ? "..." : t.synthButton}
+                  {loading ? t.loading : t.synthButton}
                 </button>
               </div>
             </div>
           )}
         </section>
+
+        {previewSource && (
+          <section className="preview-card">
+            <div className="section-head">
+              <div>
+                <span className="eyebrow muted">{language === "fr" ? "Aperçu source" : "Source preview"}</span>
+                <h3>{previewSource.document_name}</h3>
+              </div>
+              <button className="ghost subtle-button" onClick={() => setPreviewSource(null)}>
+                {language === "fr" ? "Fermer" : "Close"}
+              </button>
+            </div>
+            <div className="preview-grid">
+              <div className="preview-content">
+                <div className="preview-excerpt">
+                  <p>{highlightTerms(previewSource.excerpt, question)}</p>
+                </div>
+              </div>
+              <div className="preview-meta">
+                <div className="preview-meta-card">
+                  <strong>{language === "fr" ? "Document" : "Document"}</strong>
+                  <span>{previewDocument?.title || previewSource.document_name}</span>
+                </div>
+                <div className="preview-meta-card">
+                  <strong>{language === "fr" ? "Pertinence" : "Relevance"}</strong>
+                  <span>{typeof previewSource.score === "number" ? previewSource.score.toFixed(2) : "-"}</span>
+                </div>
+                <div className="preview-meta-card">
+                  <strong>{language === "fr" ? "Localisation" : "Location"}</strong>
+                  <span>
+                    {previewSource.page_number
+                      ? `${language === "fr" ? "Page" : "Page"} ${previewSource.page_number}`
+                      : language === "fr" ? "Contexte documentaire" : "Document context"}
+                  </span>
+                </div>
+                {previewDocument && (
+                  <div className="preview-meta-card">
+                    <strong>{language === "fr" ? "Métadonnées" : "Metadata"}</strong>
+                    <span>
+                      {[previewDocument.category, previewDocument.version || `v${previewDocument.version_number}`]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </section>
+        )}
 
         <section className="library-grid">
           <div className="library-card" id="documents">
@@ -697,17 +806,28 @@ function App() {
             </div>
 
             <div className="document-list">
-              {displayedDocuments.length === 0 && <div className="empty-box">{t.documentsEmpty}</div>}
+              {displayedDocuments.length === 0 && (
+                <div className="empty-box polished-empty">
+                  <strong>{t.documentsEmpty}</strong>
+                  <p>{t.libraryEmptyHint}</p>
+                </div>
+              )}
               {displayedDocuments.map((doc) => (
-                <article key={doc.id} id={`doc-${doc.original_filename}`} className={`document-row ${uniqueDocs.includes(doc.original_filename) ? "linked" : ""}`}>
-                  <div>
+                <article key={doc.id} id={`doc-${doc.original_filename}`} className={`document-row minimal ${uniqueDocs.includes(doc.original_filename) ? "linked" : ""}`}>
+                  <div className="document-main">
                     <strong>{doc.title || doc.original_filename}</strong>
-                    <p>{doc.original_filename}</p>
                     <small>
-                      {[doc.category || "-", doc.version || `v${doc.version_number}`, doc.tags.join(", "), doc.is_latest_version ? "latest" : "superseded"]
+                      {[doc.category || "-", doc.version || `v${doc.version_number}`, doc.is_latest_version ? "latest" : "superseded"]
                         .filter(Boolean)
                         .join(" · ")}
                     </small>
+                    {doc.tags?.length > 0 && (
+                      <div className="mini-tags">
+                        {doc.tags.slice(0, 3).map((tag) => (
+                          <span key={tag} className="mini-tag">{tag}</span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <div className="row-actions">
                     <button className="ghost" onClick={() => handleSummary(doc.id, doc.title || doc.original_filename)}>{t.summaryButton}</button>
@@ -725,7 +845,12 @@ function App() {
                 <h3>{t.reviewHistory}</h3>
               </div>
             </div>
-            {history.length === 0 && <div className="empty-box">{t.historyEmpty}</div>}
+            {history.length === 0 && (
+              <div className="empty-box polished-empty">
+                <strong>{t.historyEmpty}</strong>
+                <p>{t.historyEmptyHint}</p>
+              </div>
+            )}
             <div className="history-list">
               {history.map((item) => (
                 <article key={item.id} className="history-row">
@@ -751,7 +876,13 @@ function App() {
             {result && <span className={`safety-badge ${safetyClass(result.safety)}`}>{mapSafety(result.safety, t)}</span>}
           </div>
 
-          {!result && <div className="empty-box">{t.sourcePanelEmpty}</div>}
+          {!result && (
+            <div className="empty-box polished-empty trust-empty">
+              <strong>{t.emptyPromptTitle}</strong>
+              <p>{t.emptyPromptBody}</p>
+              <small>{t.sourcePanelEmpty}</small>
+            </div>
+          )}
 
           {result && (
             <>
@@ -766,12 +897,23 @@ function App() {
               </div>
 
               <div className="why-box">
-                <h4>{t.why}</h4>
+                <div className="inline-head">
+                  <h4>{t.why}</h4>
+                  <button className="ghost subtle-button" onClick={() => setShowExplanation((current) => !current)}>
+                    {showExplanation
+                      ? language === "fr" ? "Réduire" : "Collapse"
+                      : language === "fr" ? "Développer" : "Expand"}
+                  </button>
+                </div>
                 <ul className="plain-list">
                   <li>{t.selectedDocs}: {uniqueDocs.join(", ") || "-"}</li>
-                  <li>{t.selectedBecause}: {result.confidence_reason || t.explanationLine}</li>
                   <li>{t.coverage}: {result.used_context_count || 0} source(s)</li>
                 </ul>
+                {showExplanation && (
+                  <p className="expanded-copy">
+                    {result.confidence_reason || t.explanationLine}
+                  </p>
+                )}
               </div>
 
               {result.clarification_needed && (
@@ -798,13 +940,17 @@ function App() {
               )}
 
               <div className="evidence-list">
+                <div className="evidence-title-row">
+                  <h4>{t.evidence}</h4>
+                  <span className="source-count">{result.sources?.length || 0}</span>
+                </div>
                 {(result.sources || []).map((source) => (
                   <article
                     key={source.chunk_id}
                     className={`evidence-row ${activeSourceId === source.chunk_id ? "active" : ""}`}
                     onMouseEnter={() => setActiveSourceId(source.chunk_id)}
                     onMouseLeave={() => setActiveSourceId(null)}
-                    onClick={() => scrollToDocument(source.document_name)}
+                    onClick={() => openSourcePreview(source)}
                   >
                     <div className="evidence-head">
                       <strong>{source.document_name}</strong>
@@ -846,27 +992,6 @@ function Metric({ value, label }) {
       <strong>{value}</strong>
       <span>{label}</span>
     </div>
-  );
-}
-
-function InfoSection({ title, items, rich = false }) {
-  return (
-    <section className="info-card">
-      <div className="section-head">
-        <div>
-          <span className="eyebrow muted">{title}</span>
-          <h3>{title}</h3>
-        </div>
-      </div>
-      <div className={rich ? "info-grid" : "impact-list"}>
-        {items.map(([label, text]) => (
-          <article key={label} className="info-item">
-            <strong>{label}</strong>
-            {text && <p>{text}</p>}
-          </article>
-        ))}
-      </div>
-    </section>
   );
 }
 
