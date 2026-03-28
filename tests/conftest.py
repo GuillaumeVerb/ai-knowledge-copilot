@@ -12,6 +12,7 @@ from backend.ingestion.parser import DocumentParser
 from backend.llm.embeddings import SimpleHashEmbeddingProvider
 from backend.llm.generator import StubLLMProvider
 from backend.main import app
+from backend.repositories.assistants_repo import AssistantProfilesRepository
 from backend.repositories.documents_repo import DocumentsRepository
 from backend.repositories.qa_history_repo import QueryHistoryRepository
 from backend.retrieval.reranker import KeywordOverlapReranker
@@ -30,6 +31,8 @@ def temp_env(tmp_path: Path):
 
     documents_repo = DocumentsRepository(connection)
     history_repo = QueryHistoryRepository(connection)
+    assistants_repo = AssistantProfilesRepository(connection)
+    assistants_repo.ensure_seed_profiles()
     embedding_provider = SimpleHashEmbeddingProvider()
     vector_store = InMemoryVectorStore(embedding_provider)
     ingestion_service = DocumentIngestionService(
@@ -52,12 +55,14 @@ def temp_env(tmp_path: Path):
         llm_provider=StubLLMProvider(),
         history_repository=history_repo,
         documents_repository=documents_repo,
+        assistants_repository=assistants_repo,
         enable_reranking=True,
         max_summary_chunks=8,
     )
 
     app.dependency_overrides[dependencies.get_documents_repository] = lambda: documents_repo
     app.dependency_overrides[dependencies.get_history_repository] = lambda: history_repo
+    app.dependency_overrides[dependencies.get_assistant_repository] = lambda: assistants_repo
     app.dependency_overrides[dependencies.get_ingestion_service] = lambda: ingestion_service
     app.dependency_overrides[dependencies.get_retrieval_service] = lambda: retrieval_service
     app.dependency_overrides[dependencies.get_query_service] = lambda: query_service
@@ -66,6 +71,7 @@ def temp_env(tmp_path: Path):
         "connection": connection,
         "documents_repo": documents_repo,
         "history_repo": history_repo,
+        "assistants_repo": assistants_repo,
         "ingestion_service": ingestion_service,
         "query_service": query_service,
         "client": TestClient(app),

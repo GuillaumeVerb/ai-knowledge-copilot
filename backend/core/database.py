@@ -49,9 +49,30 @@ CREATE TABLE IF NOT EXISTS query_history (
     created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS assistant_profiles (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    instructions TEXT NOT NULL DEFAULT '',
+    tone TEXT NOT NULL DEFAULT 'balanced',
+    language TEXT NOT NULL DEFAULT 'auto',
+    answer_format TEXT NOT NULL DEFAULT 'concise',
+    document_ids_json TEXT NOT NULL DEFAULT '[]',
+    tags_json TEXT NOT NULL DEFAULT '[]',
+    categories_json TEXT NOT NULL DEFAULT '[]',
+    latest_only INTEGER NOT NULL DEFAULT 1,
+    retrieval_top_k INTEGER NOT NULL DEFAULT 5,
+    use_reranking INTEGER NOT NULL DEFAULT 1,
+    is_default INTEGER NOT NULL DEFAULT 0,
+    published INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_chunks_document_id ON chunks(document_id);
 CREATE INDEX IF NOT EXISTS idx_documents_status ON documents(status);
 CREATE INDEX IF NOT EXISTS idx_query_history_created_at ON query_history(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_assistant_profiles_updated_at ON assistant_profiles(updated_at DESC);
 """
 
 
@@ -73,11 +94,38 @@ def initialize_database(connection: sqlite3.Connection) -> None:
     _ensure_column(connection, "documents", "supersedes_document_id", "TEXT")
     _ensure_column(connection, "query_history", "feedback_note", "TEXT")
     _ensure_column(connection, "query_history", "updated_at", "TEXT")
+    _ensure_column(connection, "assistant_profiles", "description", "TEXT NOT NULL DEFAULT ''")
+    _ensure_column(connection, "assistant_profiles", "instructions", "TEXT NOT NULL DEFAULT ''")
+    _ensure_column(connection, "assistant_profiles", "tone", "TEXT NOT NULL DEFAULT 'balanced'")
+    _ensure_column(connection, "assistant_profiles", "language", "TEXT NOT NULL DEFAULT 'auto'")
+    _ensure_column(connection, "assistant_profiles", "answer_format", "TEXT NOT NULL DEFAULT 'concise'")
+    _ensure_column(connection, "assistant_profiles", "document_ids_json", "TEXT NOT NULL DEFAULT '[]'")
+    _ensure_column(connection, "assistant_profiles", "tags_json", "TEXT NOT NULL DEFAULT '[]'")
+    _ensure_column(connection, "assistant_profiles", "categories_json", "TEXT NOT NULL DEFAULT '[]'")
+    _ensure_column(connection, "assistant_profiles", "latest_only", "INTEGER NOT NULL DEFAULT 1")
+    _ensure_column(connection, "assistant_profiles", "retrieval_top_k", "INTEGER NOT NULL DEFAULT 5")
+    _ensure_column(connection, "assistant_profiles", "use_reranking", "INTEGER NOT NULL DEFAULT 1")
+    _ensure_column(connection, "assistant_profiles", "is_default", "INTEGER NOT NULL DEFAULT 0")
+    _ensure_column(connection, "assistant_profiles", "published", "INTEGER NOT NULL DEFAULT 0")
     connection.execute(
         """
         UPDATE documents
         SET version_group_id = id
         WHERE version_group_id IS NULL OR version_group_id = ''
+        """
+    )
+    connection.execute(
+        """
+        UPDATE assistant_profiles
+        SET is_default = CASE
+            WHEN id = (
+                SELECT id FROM assistant_profiles
+                ORDER BY is_default DESC, updated_at DESC, created_at DESC
+                LIMIT 1
+            ) THEN 1
+            ELSE 0
+        END
+        WHERE EXISTS (SELECT 1 FROM assistant_profiles)
         """
     )
     connection.commit()

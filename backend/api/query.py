@@ -19,7 +19,10 @@ def query_documents(
     request: QueryRequest,
     query_service: QueryService = Depends(get_query_service),
 ) -> QueryResponse:
-    return query_service.answer_query(request)
+    try:
+        return query_service.answer_query(request)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.post("/query/compare", response_model=QueryResponse)

@@ -77,3 +77,56 @@ def test_root_upload_alias_and_response_contract(temp_env):
     assert payload["confidence"] in {"High", "Medium", "Low"}
     assert payload["safety"] in {"Grounded", "Limited", "None"}
     assert isinstance(payload["suggestions"], list)
+
+
+def test_assistant_profiles_can_drive_query_defaults(temp_env):
+    client = temp_env["client"]
+
+    upload_response = client.post(
+        "/documents/upload",
+        files={"file": ("hr_policy.txt", b"Employees may work remotely two days each week with manager approval.", "text/plain")},
+        data={
+            "tags": json.dumps(["policy", "hr"]),
+            "category": "HR",
+        },
+    )
+    assert upload_response.status_code == 201
+
+    assistants_response = client.get("/assistants")
+    assert assistants_response.status_code == 200
+    assistants = assistants_response.json()
+    assert assistants
+
+    created = client.post(
+        "/assistants",
+        json={
+            "name": "HR Builder",
+            "description": "Assistant scoped to HR policies.",
+            "instructions": "Answer like an HR operations copilot and surface exceptions.",
+            "tone": "compliance",
+            "language": "fr",
+            "answer_format": "structured",
+            "categories": ["HR"],
+            "latest_only": True,
+            "retrieval_top_k": 6,
+            "use_reranking": True,
+            "published": True,
+        },
+    )
+    assert created.status_code == 201
+    assistant = created.json()
+    assert assistant["categories"] == ["HR"]
+
+    query_response = client.post(
+        "/query",
+        json={
+            "assistant_id": assistant["id"],
+            "question": "Quelle est la politique de télétravail ?",
+        },
+    )
+    assert query_response.status_code == 200
+    payload = query_response.json()
+    assert payload["assistant_id"] == assistant["id"]
+    assert payload["assistant_name"] == "HR Builder"
+    assert payload["answer_format"] == "structured"
+    assert payload["used_context_count"] >= 1

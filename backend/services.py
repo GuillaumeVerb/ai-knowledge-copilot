@@ -9,6 +9,7 @@ from itertools import combinations
 from backend.llm.answer_formatter import format_citations
 from backend.llm.generator import LLMProvider
 from backend.llm.prompts import build_compare_prompt, build_query_prompt, build_summary_prompt
+from backend.models.assistant import AssistantProfileRead
 from backend.models.answer import DocumentSummaryResponse
 from backend.models.query import (
     CompareDocumentsRequest,
@@ -19,6 +20,7 @@ from backend.models.query import (
     SourceSnippet,
     StructuredBlock,
 )
+from backend.repositories.assistants_repo import AssistantProfilesRepository
 from backend.repositories.documents_repo import DocumentsRepository
 from backend.repositories.qa_history_repo import QueryHistoryRepository
 from backend.retrieval.retriever import RetrievalService
@@ -46,6 +48,7 @@ class QueryService:
         llm_provider: LLMProvider,
         history_repository: QueryHistoryRepository,
         documents_repository: DocumentsRepository,
+        assistants_repository: AssistantProfilesRepository,
         enable_reranking: bool,
         max_summary_chunks: int,
     ):
@@ -53,24 +56,33 @@ class QueryService:
         self.llm_provider = llm_provider
         self.history_repository = history_repository
         self.documents_repository = documents_repository
+        self.assistants_repository = assistants_repository
         self.enable_reranking = enable_reranking
         self.max_summary_chunks = max_summary_chunks
 
     def answer_query(self, request: QueryRequest) -> QueryResponse:
         start = time.perf_counter()
-        normalized_format = self._normalize_answer_format(request.answer_format)
-        language = self._resolve_language(request.language, request.question)
-        clarification_needed, clarifying_question = self._detect_ambiguity(request.question, request.filters, language)
-        sources = self.retrieval_service.retrieve(
-            request.question,
-            filters=request.filters,
-            top_k=request.top_k,
-            use_reranking=request.use_reranking
+        assistant = self._resolve_assistant(request.assistant_id)
+        effective_filters, assistant_scope_empty = self._resolve_filters(request.filters, assistant)
+        normalized_format = self._resolve_answer_format(request.answer_format, assistant)
+        language = self._resolve_request_language(request, assistant)
+        top_k = request.top_k or (assistant.retrieval_top_k if assistant else None)
+        use_reranking = (
+            request.use_reranking
             if request.use_reranking is not None
-            else self.enable_reranking,
+            else (assistant.use_reranking if assistant else self.enable_reranking)
         )
-        if not sources:
-            sources = self._fallback_sources(request.question, request.filters, request.top_k or 5)
+        clarification_needed, clarifying_question = self._detect_ambiguity(request.question, effective_filters, language)
+        sources: list[SourceSnippet] = []
+        if not assistant_scope_empty:
+            sources = self.retrieval_service.retrieve(
+                request.question,
+                filters=effective_filters,
+                top_k=top_k,
+                use_reranking=use_reranking,
+            )
+        if not sources and not assistant_scope_empty:
+            sources = self._fallback_sources(request.question, effective_filters, top_k or 5)
         sources = self._narrow_sources_for_query(
             request.question,
             sources,
@@ -90,7 +102,7 @@ class QueryService:
                 question=request.question,
                 answer=answer,
                 sources_json=[],
-                filters_json=request.filters.model_dump(),
+                filters_json=self._history_filters_payload(effective_filters, assistant),
                 latency_ms=latency_ms,
             )
             return QueryResponse(
@@ -116,13 +128,15 @@ class QueryService:
                 confidence_label="low",
                 confidence_score=0.0,
                 confidence_reason=self._translate_confidence_reason(
-                    "No sufficiently relevant evidence found in the indexed documents.",
+                    self._no_evidence_reason(assistant_scope_empty),
                     language,
                 ),
                 evidence_documents=[],
                 evidence_summary="0 source excerpts across 0 documents.",
-                caution="The assistant did not find enough grounded evidence to answer safely.",
+                caution=self._no_evidence_caution(assistant_scope_empty),
                 history_id=history_entry.id,
+                assistant_id=assistant.id if assistant else None,
+                assistant_name=assistant.name if assistant else None,
             )
         prompt = build_query_prompt(
             request.question,
@@ -130,6 +144,9 @@ class QueryService:
             normalized_format,
             language=language,
             conversation_history=request.conversation_history,
+            assistant_name=assistant.name if assistant else None,
+            assistant_instructions=assistant.instructions if assistant else None,
+            assistant_tone=assistant.tone if assistant else None,
         )
         raw_answer = self.llm_provider.generate(prompt)
         display_sources = self._select_display_sources(raw_answer, sources)
@@ -148,7 +165,7 @@ class QueryService:
         )
         suggestions = self._build_suggestions(
             request.question,
-            request.filters,
+            effective_filters,
             display_sources,
             clarification_needed=clarification_needed,
         )
@@ -156,7 +173,7 @@ class QueryService:
             question=request.question,
             answer=answer,
             sources_json=[source.model_dump() for source in display_sources],
-            filters_json=request.filters.model_dump(),
+            filters_json=self._history_filters_payload(effective_filters, assistant),
             latency_ms=latency_ms,
         )
         return QueryResponse(
@@ -181,6 +198,8 @@ class QueryService:
             evidence_summary=self._build_evidence_summary(display_sources),
             caution=self._build_caution(confidence_label, display_sources),
             history_id=history_entry.id,
+            assistant_id=assistant.id if assistant else None,
+            assistant_name=assistant.name if assistant else None,
         )
 
     def summarize_document(self, document_id: str) -> DocumentSummaryResponse:
@@ -533,6 +552,94 @@ class QueryService:
         if selected:
             return selected
         return sources[:max_sources]
+
+    def _resolve_assistant(self, assistant_id: str | None) -> AssistantProfileRead | None:
+        if assistant_id:
+            return self.assistants_repository.get_profile(assistant_id)
+        return self.assistants_repository.get_default_profile()
+
+    def _resolve_filters(
+        self,
+        request_filters: QueryFilters,
+        assistant: AssistantProfileRead | None,
+    ) -> tuple[QueryFilters, bool]:
+        if assistant is None:
+            return request_filters, False
+
+        assistant_scope_active = bool(
+            assistant.document_ids or assistant.tags or assistant.categories or assistant.latest_only
+        )
+        allowed_documents = self.documents_repository.list_documents(
+            include_superseded=not assistant.latest_only
+        )
+        if assistant.document_ids:
+            allowed_documents = [
+                document for document in allowed_documents if document.id in assistant.document_ids
+            ]
+        if assistant.tags:
+            allowed_documents = [
+                document for document in allowed_documents
+                if any(tag in document.tags for tag in assistant.tags)
+            ]
+        if assistant.categories:
+            allowed_documents = [
+                document for document in allowed_documents
+                if document.category in assistant.categories
+            ]
+        allowed_ids = [document.id for document in allowed_documents]
+        if request_filters.document_ids:
+            if assistant_scope_active:
+                allowed_ids = [document_id for document_id in request_filters.document_ids if document_id in set(allowed_ids)]
+            else:
+                allowed_ids = request_filters.document_ids
+        effective_filters = request_filters.model_copy(
+            update={
+                "document_ids": allowed_ids if (assistant_scope_active or request_filters.document_ids) else request_filters.document_ids,
+            }
+        )
+        return effective_filters, assistant_scope_active and not allowed_ids
+
+    def _resolve_answer_format(
+        self,
+        requested_format: str,
+        assistant: AssistantProfileRead | None,
+    ) -> str:
+        if requested_format != "default":
+            return self._normalize_answer_format(requested_format)
+        if assistant:
+            return self._normalize_answer_format(assistant.answer_format)
+        return self._normalize_answer_format(requested_format)
+
+    def _resolve_request_language(
+        self,
+        request: QueryRequest,
+        assistant: AssistantProfileRead | None,
+    ) -> str:
+        requested_language = request.language
+        if requested_language == "auto" and assistant and assistant.language != "auto":
+            requested_language = assistant.language
+        return self._resolve_language(requested_language, request.question)
+
+    def _history_filters_payload(
+        self,
+        filters: QueryFilters,
+        assistant: AssistantProfileRead | None,
+    ) -> dict:
+        payload = filters.model_dump()
+        if assistant:
+            payload["assistant_id"] = assistant.id
+            payload["assistant_name"] = assistant.name
+        return payload
+
+    def _no_evidence_reason(self, assistant_scope_empty: bool) -> str:
+        if assistant_scope_empty:
+            return "The assistant scope does not include any indexed documents for this request."
+        return "No sufficiently relevant evidence found in the indexed documents."
+
+    def _no_evidence_caution(self, assistant_scope_empty: bool) -> str:
+        if assistant_scope_empty:
+            return "The current assistant configuration does not match any indexed documents. Broaden the assistant scope or upload matching files."
+        return "The assistant did not find enough grounded evidence to answer safely."
 
     def _build_answer_sections(
         self,
@@ -970,5 +1077,6 @@ class QueryService:
         translations = {
             "No sufficiently relevant evidence found in the indexed documents.": "Aucune preuve suffisamment pertinente n’a été trouvée dans les documents indexés.",
             "The selected documents do not contain enough relevant overlap for a grounded synthesis.": "Les documents sélectionnés ne contiennent pas assez de recoupements pertinents pour produire une synthèse fondée.",
+            "The assistant scope does not include any indexed documents for this request.": "Le périmètre de l’assistant ne contient aucun document indexé correspondant à cette demande.",
         }
         return translations.get(reason, reason)

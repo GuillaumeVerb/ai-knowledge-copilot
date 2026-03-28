@@ -20,6 +20,9 @@ def build_query_prompt(
     *,
     language: str = "fr",
     conversation_history: Optional[list[dict[str, str]]] = None,
+    assistant_name: Optional[str] = None,
+    assistant_instructions: Optional[str] = None,
+    assistant_tone: Optional[str] = None,
 ) -> str:
     formatted_sources = []
     for index, source in enumerate(sources, start=1):
@@ -60,10 +63,18 @@ def build_query_prompt(
                 turns.append(f"[{index}] User: {user_text}\nAssistant: {assistant_text}")
         if turns:
             history_text = "Conversation memory:\n" + "\n\n".join(turns) + "\n\n"
+    assistant_text = ""
+    if assistant_name:
+        assistant_text += f"Assistant profile: {assistant_name}\n"
+    if assistant_tone:
+        assistant_text += f"Preferred tone: {assistant_tone}\n"
+    if assistant_instructions:
+        assistant_text += f"Additional instructions:\n{assistant_instructions.strip()}\n\n"
     return (
         f"{instruction}\n"
         f"{language_instruction}\n"
         "If evidence is partial, explicitly say so.\n\n"
+        f"{assistant_text}"
         f"{history_text}"
         f"Question: {question}\n\n"
         f"Context:\n" + "\n\n".join(formatted_sources)

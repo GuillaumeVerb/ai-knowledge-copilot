@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.api import admin, documents, health, history, query, summaries
+from backend.api import admin, assistants, documents, health, history, query, summaries
 from backend.core.logging import configure_logging
 from backend.core.settings import get_settings
 
@@ -18,6 +18,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(health.router)
+app.include_router(assistants.router)
 app.include_router(documents.router)
 app.include_router(documents.public_router)
 app.include_router(query.router)

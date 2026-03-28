@@ -1,7 +1,14 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8010";
+const DEFAULT_HOST =
+  typeof window !== "undefined" ? window.location.hostname || "127.0.0.1" : "127.0.0.1";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || `http://${DEFAULT_HOST}:8010`;
 
 async function request(path, options = {}) {
-  const response = await fetch(`${API_BASE_URL}${path}`, options);
+  let response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, options);
+  } catch (error) {
+    throw new Error("Impossible de joindre le service. Vérifiez que l'API locale est bien démarrée.");
+  }
   if (!response.ok) {
     const text = await response.text();
     let payload = null;
@@ -16,6 +23,19 @@ async function request(path, options = {}) {
 export const api = {
   baseUrl: API_BASE_URL,
   health: () => request("/health"),
+  assistants: () => request("/assistants"),
+  createAssistant: (payload) =>
+    request("/assistants", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+  updateAssistant: (assistantId, payload) =>
+    request(`/assistants/${assistantId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
   documents: (params = {}) => {
     const searchParams = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {

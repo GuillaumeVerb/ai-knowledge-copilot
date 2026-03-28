@@ -32,6 +32,7 @@ class QueryFilters(BaseModel):
 
 class QueryRequest(BaseModel):
     question: str = Field(min_length=3)
+    assistant_id: Optional[str] = None
     filters: QueryFilters = Field(default_factory=QueryFilters)
     top_k: Optional[int] = None
     answer_format: AnswerFormat = "default"
@@ -79,6 +80,8 @@ class QueryResponse(BaseModel):
     evidence_summary: str = ""
     caution: str = ""
     history_id: Optional[str] = None
+    assistant_id: Optional[str] = None
+    assistant_name: Optional[str] = None
 
 
 class CompareDocumentsRequest(BaseModel):

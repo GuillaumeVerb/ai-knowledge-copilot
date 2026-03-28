@@ -14,6 +14,7 @@ from backend.ingestion.indexer import DocumentIngestionService, DocumentStorage
 from backend.ingestion.parser import DocumentParser
 from backend.llm.embeddings import OpenAIEmbeddingProvider, SimpleHashEmbeddingProvider
 from backend.llm.generator import OpenAIResponsesProvider, StubLLMProvider
+from backend.repositories.assistants_repo import AssistantProfilesRepository
 from backend.repositories.documents_repo import DocumentsRepository
 from backend.repositories.qa_history_repo import QueryHistoryRepository
 from backend.retrieval.reranker import KeywordOverlapReranker
@@ -39,6 +40,12 @@ def get_documents_repository() -> DocumentsRepository:
 
 def get_history_repository() -> QueryHistoryRepository:
     return QueryHistoryRepository(get_sqlite_connection())
+
+
+def get_assistant_repository() -> AssistantProfilesRepository:
+    repository = AssistantProfilesRepository(get_sqlite_connection())
+    repository.ensure_seed_profiles()
+    return repository
 
 
 @lru_cache(maxsize=1)
@@ -105,6 +112,7 @@ def get_query_service() -> QueryService:
         llm_provider=get_llm_provider(),
         history_repository=get_history_repository(),
         documents_repository=get_documents_repository(),
+        assistants_repository=get_assistant_repository(),
         enable_reranking=settings.enable_reranking,
         max_summary_chunks=settings.max_summary_chunks,
     )
