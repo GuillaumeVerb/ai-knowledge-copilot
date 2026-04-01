@@ -1,5 +1,14 @@
 import json
 
+from backend.core import dependencies
+from backend.main import app
+from backend.services import QueryService
+
+
+class FailingLLMProvider:
+    def generate(self, prompt: str) -> str:
+        raise RuntimeError("simulated OpenAI outage")
+
 
 def test_upload_query_summary_and_delete(temp_env):
     client = temp_env["client"]
@@ -129,4 +138,38 @@ def test_assistant_profiles_can_drive_query_defaults(temp_env):
     assert payload["assistant_id"] == assistant["id"]
     assert payload["assistant_name"] == "HR Builder"
     assert payload["answer_format"] == "structured"
+    assert payload["used_context_count"] >= 1
+
+
+def test_query_falls_back_when_primary_llm_fails(temp_env):
+    client = temp_env["client"]
+
+    upload_response = client.post(
+        "/documents/upload",
+        files={"file": ("policy.txt", b"Managers approve recurring remote work schedules.", "text/plain")},
+        data={
+            "tags": json.dumps(["policy"]),
+            "category": "HR",
+        },
+    )
+    assert upload_response.status_code == 201
+
+    fallback_query_service = QueryService(
+        retrieval_service=temp_env["query_service"].retrieval_service,
+        llm_provider=FailingLLMProvider(),
+        history_repository=temp_env["history_repo"],
+        documents_repository=temp_env["documents_repo"],
+        assistants_repository=temp_env["assistants_repo"],
+        enable_reranking=True,
+        max_summary_chunks=8,
+    )
+    app.dependency_overrides[dependencies.get_query_service] = lambda: fallback_query_service
+
+    query_response = client.post(
+        "/query",
+        json={"question": "Who approves recurring remote work schedules?"},
+    )
+    assert query_response.status_code == 200
+    payload = query_response.json()
+    assert payload["status"] == "answered"
     assert payload["used_context_count"] >= 1

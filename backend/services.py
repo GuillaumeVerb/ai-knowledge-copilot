@@ -7,7 +7,7 @@ from collections import defaultdict
 from itertools import combinations
 
 from backend.llm.answer_formatter import format_citations
-from backend.llm.generator import LLMProvider
+from backend.llm.generator import LLMProvider, StubLLMProvider
 from backend.llm.prompts import build_compare_prompt, build_query_prompt, build_summary_prompt
 from backend.models.assistant import AssistantProfileRead
 from backend.models.answer import DocumentSummaryResponse
@@ -59,6 +59,7 @@ class QueryService:
         self.assistants_repository = assistants_repository
         self.enable_reranking = enable_reranking
         self.max_summary_chunks = max_summary_chunks
+        self.fallback_llm_provider = StubLLMProvider()
 
     def answer_query(self, request: QueryRequest) -> QueryResponse:
         start = time.perf_counter()
@@ -148,7 +149,7 @@ class QueryService:
             assistant_instructions=assistant.instructions if assistant else None,
             assistant_tone=assistant.tone if assistant else None,
         )
-        raw_answer = self.llm_provider.generate(prompt)
+        raw_answer = self._generate_answer(prompt)
         display_sources = self._select_display_sources(raw_answer, sources)
         answer = format_citations(raw_answer, display_sources)
         sections = self._build_answer_sections(
@@ -221,7 +222,7 @@ class QueryService:
         ]
         sources = sources[:4]
         prompt = build_summary_prompt(document.original_filename, sources, language=language)
-        raw_summary = self.llm_provider.generate(prompt)
+        raw_summary = self._generate_answer(prompt)
         display_sources = self._select_display_sources(raw_summary, sources)
         summary = format_citations(raw_summary, display_sources)
         latency_ms = int((time.perf_counter() - start) * 1000)
@@ -277,7 +278,7 @@ class QueryService:
             sources,
             language=language,
         )
-        raw_answer = self.llm_provider.generate(prompt)
+        raw_answer = self._generate_answer(prompt)
         display_sources = self._select_display_sources(raw_answer, sources, max_sources=4)
         answer = format_citations(raw_answer, display_sources)
         sections = self._build_comparison_sections(
@@ -410,7 +411,7 @@ class QueryService:
             language=language,
             conversation_history=request.conversation_history,
         )
-        raw_answer = self.llm_provider.generate(prompt)
+        raw_answer = self._generate_answer(prompt)
         display_sources = self._select_display_sources(raw_answer, sources, max_sources=4)
         answer = format_citations(raw_answer, display_sources)
         latency_ms = int((time.perf_counter() - start) * 1000)
@@ -497,6 +498,13 @@ class QueryService:
 
         scored_chunks.sort(key=lambda item: item[0], reverse=True)
         return [source for _, source in scored_chunks[:top_k]]
+
+    def _generate_answer(self, prompt: str) -> str:
+        try:
+            return self.llm_provider.generate(prompt)
+        except Exception as exc:
+            logger.warning("Primary LLM provider failed, using stub fallback: %s", exc)
+            return self.fallback_llm_provider.generate(prompt)
 
     def _tokenize(self, text: str) -> list[str]:
         return [
