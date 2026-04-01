@@ -22,7 +22,7 @@ The goal is:
 
 Create a Railway service from the Docker image:
 
-- image: `qdrant/qdrant:v1.13.4`
+- image: `qdrant/qdrant:v1.15.1`
 
 Recommended settings:
 

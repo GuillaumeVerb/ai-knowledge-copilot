@@ -62,7 +62,12 @@ def get_vector_store():
     embedding_provider = get_embedding_provider()
     try:
         if settings.qdrant_url:
-            client = QdrantClient(url=settings.qdrant_url, api_key=settings.qdrant_api_key)
+            client = QdrantClient(
+                url=settings.qdrant_url,
+                api_key=settings.qdrant_api_key,
+                timeout=10,
+                check_compatibility=False,
+            )
             return QdrantVectorStore(
                 client=client,
                 collection_name=settings.qdrant_collection_name,
