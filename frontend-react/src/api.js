@@ -1,6 +1,8 @@
 const DEFAULT_HOST =
   typeof window !== "undefined" ? window.location.hostname || "127.0.0.1" : "127.0.0.1";
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || `http://${DEFAULT_HOST}:8010`;
+const RUNTIME_API_BASE_URL =
+  typeof window !== "undefined" ? window.__APP_CONFIG__?.apiBaseUrl || "" : "";
+const API_BASE_URL = RUNTIME_API_BASE_URL || import.meta.env.VITE_API_BASE_URL || `http://${DEFAULT_HOST}:8010`;
 
 async function request(path, options = {}) {
   let response;

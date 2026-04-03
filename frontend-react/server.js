@@ -1,4 +1,4 @@
-import { createReadStream, existsSync } from "node:fs";
+import { createReadStream, existsSync, readFileSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
@@ -10,6 +10,9 @@ const distDir = path.join(__dirname, "dist");
 const indexPath = path.join(distDir, "index.html");
 const host = "0.0.0.0";
 const port = Number.parseInt(process.env.PORT || "4173", 10);
+const runtimeConfig = {
+  apiBaseUrl: process.env.VITE_API_BASE_URL || "",
+};
 
 const contentTypes = {
   ".css": "text/css; charset=utf-8",
@@ -35,6 +38,16 @@ function sendFile(response, filePath) {
   createReadStream(filePath).pipe(response);
 }
 
+function sendIndex(response) {
+  const html = readFileSync(indexPath, "utf-8");
+  const injectedConfig = `<script>window.__APP_CONFIG__ = ${JSON.stringify(runtimeConfig)};</script>`;
+  const payload = html.includes("</head>")
+    ? html.replace("</head>", `${injectedConfig}</head>`)
+    : `${injectedConfig}${html}`;
+  response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+  response.end(payload);
+}
+
 const server = http.createServer(async (request, response) => {
   const pathname = safePathname(request.url || "/");
   const requestedPath = path.join(distDir, pathname.replace(/^[/\\]+/, ""));
@@ -53,7 +66,7 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
-  sendFile(response, indexPath);
+  sendIndex(response);
 });
 
 server.listen(port, host, () => {
