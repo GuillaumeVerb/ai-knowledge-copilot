@@ -52,6 +52,16 @@ const server = http.createServer(async (request, response) => {
   const pathname = safePathname(request.url || "/");
   const requestedPath = path.join(distDir, pathname.replace(/^[/\\]+/, ""));
 
+  if (requestedPath === indexPath) {
+    if (!existsSync(indexPath)) {
+      response.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
+      response.end("Frontend build artifacts are missing.");
+      return;
+    }
+    sendIndex(response);
+    return;
+  }
+
   try {
     const fileStats = await stat(requestedPath);
     if (fileStats.isFile()) {
