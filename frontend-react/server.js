@@ -10,8 +10,12 @@ const distDir = path.join(__dirname, "dist");
 const indexPath = path.join(distDir, "index.html");
 const host = "0.0.0.0";
 const port = Number.parseInt(process.env.PORT || "4173", 10);
+function normalizeApiBaseUrl(value) {
+  if (!value) return "";
+  return /^https?:\/\//i.test(value) ? value : `https://${value}`;
+}
 const runtimeConfig = {
-  apiBaseUrl: process.env.VITE_API_BASE_URL || "",
+  apiBaseUrl: normalizeApiBaseUrl(process.env.VITE_API_BASE_URL || ""),
 };
 
 const contentTypes = {
